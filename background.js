@@ -161,6 +161,7 @@ class TabManager {
   }
 
   createTabData(tab) {
+    const existingTab = this.tabs.get(tab.id);
     return {
       id: tab.id,
       title: tab.title || "Loading...",
@@ -172,9 +173,9 @@ class TabManager {
       createdAt: Date.now(),
       lastAccessed: tab.active
         ? Date.now()
-        : this.tabs.get(tab.id)?.lastAccessed || Date.now(),
-      accessCount: this.tabs.get(tab.id)?.accessCount || 0,
-      category: this.tabs.get(tab.id)?.category || "uncategorized",
+        : existingTab?.lastAccessed || Date.now(),
+      accessCount: existingTab?.accessCount || 0,
+      category: existingTab?.category || this.categorizeTab(tab), // Preserve manual category
     };
   }
 
@@ -220,96 +221,151 @@ class TabManager {
   }
 
   categorizeTab(tab) {
-    if (!tab.url) return "other";
+    if (!tab.url || !tab.title) return "other";
 
     const url = tab.url.toLowerCase();
-    const title = (tab.title || "").toLowerCase();
+    const title = tab.title.toLowerCase();
+    const hostname = new URL(tab.url).hostname;
 
-    // Development
-    if (
-      url.includes("github.com") ||
-      url.includes("stackoverflow.com") ||
-      url.includes("developer.mozilla.org") ||
-      url.includes("codepen.io") ||
-      title.includes("api") ||
-      title.includes("documentation")
-    ) {
-      return "development";
-    }
+    // Expanded category rules with weights
+    const categoryRules = {
+      development: {
+        domains: [
+          "github.com",
+          "stackoverflow.com",
+          "developer.mozilla.org",
+          "codepen.io",
+          "gitlab.com",
+          "bitbucket.org",
+          "dev.to",
+        ],
+        keywords: [
+          "api",
+          "documentation",
+          "code",
+          "programming",
+          "developer",
+          "tutorial",
+          "debug",
+        ],
+        weight: 1.0,
+      },
+      social: {
+        domains: [
+          "twitter.com",
+          "facebook.com",
+          "linkedin.com",
+          "instagram.com",
+          "reddit.com",
+          "discord.com",
+          "tiktok.com",
+        ],
+        keywords: ["social", "post", "feed", "follow", "chat", "messenger"],
+        weight: 0.9,
+      },
+      productivity: {
+        domains: [
+          "google.com/drive",
+          "docs.google.com",
+          "notion.so",
+          "trello.com",
+          "slack.com",
+          "zoom.us",
+          "asana.com",
+          "monday.com",
+        ],
+        keywords: [
+          "task",
+          "project",
+          "document",
+          "meeting",
+          "calendar",
+          "email",
+        ],
+        weight: 0.8,
+      },
+      entertainment: {
+        domains: [
+          "youtube.com",
+          "netflix.com",
+          "spotify.com",
+          "twitch.tv",
+          "hulu.com",
+          "disneyplus.com",
+        ],
+        keywords: ["video", "music", "stream", "movie", "series", "podcast"],
+        weight: 0.7,
+      },
+      shopping: {
+        domains: [
+          "amazon.com",
+          "ebay.com",
+          "etsy.com",
+          "walmart.com",
+          "target.com",
+          "aliexpress.com",
+        ],
+        keywords: ["shop", "store", "cart", "checkout", "buy", "order"],
+        weight: 0.6,
+      },
+      news: {
+        domains: [
+          "cnn.com",
+          "bbc.com",
+          "reuters.com",
+          "nytimes.com",
+          "theguardian.com",
+          "news.google.com",
+        ],
+        keywords: ["news", "breaking", "latest", "article", "report"],
+        weight: 0.6,
+      },
+      reference: {
+        domains: ["wikipedia.org", "britannica.com", "scholar.google.com"],
+        keywords: [
+          "wiki",
+          "reference",
+          "tutorial",
+          "how to",
+          "guide",
+          "research",
+          "study",
+        ],
+        weight: 0.6,
+      },
+    };
 
-    // Social Media
-    if (
-      url.includes("twitter.com") ||
-      url.includes("facebook.com") ||
-      url.includes("linkedin.com") ||
-      url.includes("instagram.com") ||
-      url.includes("reddit.com") ||
-      url.includes("discord.com")
-    ) {
-      return "social";
-    }
+    // Calculate scores for each category
+    let maxScore = 0;
+    let bestCategory = "other";
+    const keywordThreshold = 2; // Number of keyword matches required
 
-    // Productivity
-    if (
-      url.includes("google.com/drive") ||
-      url.includes("docs.google.com") ||
-      url.includes("notion.so") ||
-      url.includes("trello.com") ||
-      url.includes("slack.com") ||
-      url.includes("zoom.us")
-    ) {
-      return "productivity";
-    }
+    Object.entries(categoryRules).forEach(([category, rules]) => {
+      let score = 0;
 
-    // Entertainment
-    if (
-      url.includes("youtube.com") ||
-      url.includes("netflix.com") ||
-      url.includes("spotify.com") ||
-      url.includes("twitch.tv") ||
-      url.includes("music.") ||
-      title.includes("video")
-    ) {
-      return "entertainment";
-    }
+      // Domain matching (high confidence)
+      if (rules.domains.some((domain) => hostname.includes(domain))) {
+        score += rules.weight * 2; // Domains are strong indicators
+      }
 
-    // Shopping
-    if (
-      url.includes("amazon.com") ||
-      url.includes("ebay.com") ||
-      url.includes("shop") ||
-      url.includes("store") ||
-      url.includes("cart") ||
-      url.includes("checkout")
-    ) {
-      return "shopping";
-    }
+      // Keyword matching in URL and title
+      const keywordMatches = rules.keywords.filter(
+        (keyword) => url.includes(keyword) || title.includes(keyword)
+      ).length;
+      score += (keywordMatches / keywordThreshold) * rules.weight;
 
-    // News
-    if (
-      url.includes("news") ||
-      url.includes("cnn.com") ||
-      url.includes("bbc.com") ||
-      url.includes("reuters.com") ||
-      title.includes("breaking") ||
-      title.includes("latest")
-    ) {
-      return "news";
-    }
+      // Boost score based on access frequency (if available)
+      if (tab.accessCount > 3) {
+        score += 0.2; // Frequently accessed tabs are more likely to be correctly categorized
+      }
 
-    // Reference
-    if (
-      url.includes("wikipedia.org") ||
-      url.includes("wiki") ||
-      url.includes("reference") ||
-      url.includes("tutorial") ||
-      title.includes("how to") ||
-      title.includes("guide")
-    ) {
-      return "reference";
-    }
+      if (score > maxScore) {
+        maxScore = score;
+        bestCategory = category;
+      }
+    });
 
-    return "other";
+    return maxScore > 0.5 ? bestCategory : "other"; // Threshold to avoid weak matches
   }
 
   getCategoryStats(tabs) {

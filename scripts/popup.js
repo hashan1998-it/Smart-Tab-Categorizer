@@ -217,45 +217,53 @@ class PopupManager {
     tabItem.className = "tab-item";
     tabItem.dataset.tabId = tab.id;
 
-    // Get favicon URL or use fallback
     const faviconUrl = tab.favIconUrl || this.getFallbackFavicon(tab.url);
 
     tabItem.innerHTML = `
-            <img class="tab-favicon" src="${faviconUrl}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%2364748b%22 stroke-width=%222%22><circle cx=%2212%22 cy=%2212%22 r=%223%22/></svg>'">
-            <div class="tab-info">
-                <div class="tab-title">${this.escapeHtml(
-                  tab.title || "Loading..."
-                )}</div>
-                <div class="tab-url">${this.escapeHtml(
-                  this.formatUrl(tab.url)
-                )}</div>
-            </div>
-            <div class="tab-actions">
-                <button class="tab-action" title="Focus Tab" data-action="focus">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="3"/>
-                        <circle cx="12" cy="12" r="10"/>
-                    </svg>
-                </button>
-                <button class="tab-action" title="Close Tab" data-action="close">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
-            </div>
-        `;
+      <img class="tab-favicon" src="${faviconUrl}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%2364748b%22 stroke-width=%222%22><circle cx=%2212%22 cy=%2212%22 r=%223%22/></svg>'">
+      <div class="tab-info">
+        <div class="tab-title">${this.escapeHtml(
+          tab.title || "Loading..."
+        )}</div>
+        <div class="tab-url">${this.escapeHtml(this.formatUrl(tab.url))}</div>
+      </div>
+      <div class="tab-actions">
+        <select class="tab-category-select" title="Change Category">
+          <option value="">Move to...</option>
+          <option value="development">Development</option>
+          <option value="social">Social</option>
+          <option value="productivity">Productivity</option>
+          <option value="entertainment">Entertainment</option>
+          <option value="shopping">Shopping</option>
+          <option value="news">News</option>
+          <option value="reference">Reference</option>
+          <option value="other">Other</option>
+        </select>
+        <button class="tab-action" title="Focus Tab" data-action="focus">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <circle cx="12" cy="12" r="10"/>
+          </svg>
+        </button>
+        <button class="tab-action" title="Close Tab" data-action="close">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    `;
 
-    // Add event listeners
+    // Event listeners
     tabItem.addEventListener("click", (e) => {
-      if (!e.target.closest(".tab-action")) {
+      if (!e.target.closest(".tab-action, .tab-category-select")) {
         this.handleTabClick(tab.id);
       }
     });
 
-    // Action buttons
     const focusBtn = tabItem.querySelector('[data-action="focus"]');
     const closeBtn = tabItem.querySelector('[data-action="close"]');
+    const categorySelect = tabItem.querySelector(".tab-category-select");
 
     focusBtn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -265,6 +273,22 @@ class PopupManager {
     closeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.handleTabClose(tab.id);
+    });
+
+    categorySelect.addEventListener("change", async (e) => {
+      const newCategory = e.target.value;
+      if (newCategory) {
+        try {
+          await chrome.runtime.sendMessage({
+            type: "moveTabs",
+            tabIds: [tab.id],
+            category: newCategory,
+          });
+          await this.loadTabs(); // Refresh UI
+        } catch (error) {
+          console.error("❌ Error moving tab:", error);
+        }
+      }
     });
 
     return tabItem;

@@ -394,3 +394,25 @@ body {
 .categories-container::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+.tab-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.tab-category-select {
+  font-size: 12px;
+  padding: 2px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.tab-category-select:hover {
+  background: #f1f5f9;
+}
