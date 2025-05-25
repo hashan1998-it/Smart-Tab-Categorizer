@@ -1,5 +1,5 @@
 // Background service worker for Smart Tab Organizer
-// Handles tab events and maintains state
+// Handles tab events, categorization, and state management
 
 class TabManager {
   constructor() {
@@ -11,9 +11,7 @@ class TabManager {
   }
 
   async init() {
-    console.log(
-      "🚀 Smart Tab Organizer: Initializing background service worker"
-    );
+    console.log("🚀 Smart Tab Organizer: Initializing background service worker");
 
     // Set up event listeners
     this.setupEventListeners();
@@ -66,7 +64,7 @@ class TabManager {
   }
 
   async handleTabCreated(tab) {
-    const tabData = this.createTabData(tab);
+    const tabData = await this.createTabData(tab);
     this.tabs.set(tab.id, tabData);
 
     // Save to storage
@@ -81,7 +79,7 @@ class TabManager {
       const existingTab = this.tabs.get(tabId);
       const updatedTab = {
         ...existingTab,
-        ...this.createTabData(tab),
+        ...(await this.createTabData(tab)),
         lastAccessed: existingTab.lastAccessed, // Preserve access time
       };
 
@@ -116,8 +114,8 @@ class TabManager {
   }
 
   handleWindowFocused(windowId) {
-    // Could be used for future features like window-based organization
     console.log("🔍 Window focused:", windowId);
+    // Could be used for future window-based organization
   }
 
   async handleMessage(message, sender, sendResponse) {
@@ -151,6 +149,11 @@ class TabManager {
           sendResponse({ success: true });
           break;
 
+        case "reorderTabs":
+          await this.reorderTabs(message.tabIds, message.category);
+          sendResponse({ success: true });
+          break;
+
         default:
           sendResponse({ success: false, error: "Unknown message type" });
       }
@@ -160,7 +163,7 @@ class TabManager {
     }
   }
 
-  createTabData(tab) {
+  async createTabData(tab) {
     const existingTab = this.tabs.get(tab.id);
     return {
       id: tab.id,
@@ -175,7 +178,7 @@ class TabManager {
         ? Date.now()
         : existingTab?.lastAccessed || Date.now(),
       accessCount: existingTab?.accessCount || 0,
-      category: existingTab?.category || this.categorizeTab(tab), // Preserve manual category
+      category: existingTab?.category || (await this.categorizeTab(tab)), // Preserve manual category
     };
   }
 
@@ -187,7 +190,7 @@ class TabManager {
       const newTabsMap = new Map();
 
       for (const tab of currentTabs) {
-        const tabData = this.createTabData(tab);
+        const tabData = await this.createTabData(tab);
         newTabsMap.set(tab.id, tabData);
       }
 
@@ -212,23 +215,23 @@ class TabManager {
   }
 
   async categorizeTabs(tabs) {
-    // This is a placeholder for the AI categorization logic
-    // For now, we'll use simple rule-based categorization
-    return tabs.map((tab) => ({
+    return Promise.all(tabs.map(async (tab) => ({
       ...tab,
-      category: this.categorizeTab(tab),
-    }));
+      category: await this.categorizeTab(tab),
+    })));
   }
 
-  categorizeTab(tab) {
+  async categorizeTab(tab) {
     if (!tab.url || !tab.title) return "other";
 
     const url = tab.url.toLowerCase();
     const title = tab.title.toLowerCase();
     const hostname = new URL(tab.url).hostname;
 
-    // Expanded category rules with weights
-    const categoryRules = {
+    // Load custom rules
+    const { categoryRules: customRules = {} } = await chrome.storage.local.get(["categoryRules"]);
+
+    const defaultRules = {
       development: {
         domains: [
           "github.com",
@@ -274,14 +277,7 @@ class TabManager {
           "asana.com",
           "monday.com",
         ],
-        keywords: [
-          "task",
-          "project",
-          "document",
-          "meeting",
-          "calendar",
-          "email",
-        ],
+        keywords: ["task", "project", "document", "meeting", "calendar", "email"],
         weight: 0.8,
       },
       entertainment: {
@@ -333,17 +329,37 @@ class TabManager {
         ],
         weight: 0.6,
       },
+      other: {
+        domains: [],
+        keywords: [],
+        weight: 0.1,
+      },
     };
 
-    // Calculate scores for each category
+    // Merge custom and default rules
+    const mergedRules = { ...defaultRules };
+    Object.entries(customRules).forEach(([category, custom]) => {
+      if (!mergedRules[category]) {
+        mergedRules[category] = { domains: [], keywords: [], weight: 0.6 };
+      }
+      mergedRules[category].domains = [
+        ...(mergedRules[category].domains || []),
+        ...(custom.domains || []),
+      ];
+      mergedRules[category].keywords = [
+        ...(mergedRules[category].keywords || []),
+        ...(custom.keywords || []),
+      ];
+    });
+
     let maxScore = 0;
     let bestCategory = "other";
-    const keywordThreshold = 2; // Number of keyword matches required
+    const keywordThreshold = 2;
 
-    Object.entries(categoryRules).forEach(([category, rules]) => {
+    Object.entries(mergedRules).forEach(([category, rules]) => {
       let score = 0;
 
-      // Domain matching (high confidence)
+      // Domain matching
       if (rules.domains.some((domain) => hostname.includes(domain))) {
         score += rules.weight * 2; // Domains are strong indicators
       }
@@ -354,9 +370,9 @@ class TabManager {
       ).length;
       score += (keywordMatches / keywordThreshold) * rules.weight;
 
-      // Boost score based on access frequency (if available)
+      // Boost for frequently accessed tabs
       if (tab.accessCount > 3) {
-        score += 0.2; // Frequently accessed tabs are more likely to be correctly categorized
+        score += 0.2;
       }
 
       if (score > maxScore) {
@@ -365,7 +381,7 @@ class TabManager {
       }
     });
 
-    return maxScore > 0.5 ? bestCategory : "other"; // Threshold to avoid weak matches
+    return maxScore > 0.5 ? bestCategory : "other";
   }
 
   getCategoryStats(tabs) {
@@ -427,6 +443,32 @@ class TabManager {
     }
   }
 
+  async reorderTabs(tabIds, category) {
+    try {
+      // Update tab order in local state
+      const tabsInCategory = Array.from(this.tabs.values())
+        .filter((tab) => tab.category === category)
+        .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+
+      // Reorder based on provided tabIds
+      const orderedTabs = tabIds
+        .map((id) => tabsInCategory.find((tab) => tab.id === id))
+        .filter(Boolean);
+
+      // Update lastAccessed to reflect new order
+      orderedTabs.forEach((tab, index) => {
+        tab.lastAccessed = Date.now() - index;
+        this.tabs.set(tab.id, tab);
+      });
+
+      await this.saveTabData();
+      this.notifyPopup("tabsReordered", { tabIds, category });
+    } catch (error) {
+      console.error("❌ Error reordering tabs:", error);
+      throw error;
+    }
+  }
+
   async saveTabData() {
     try {
       const tabsData = Object.fromEntries(this.tabs);
@@ -452,7 +494,6 @@ class TabManager {
   }
 
   notifyPopup(eventType, data) {
-    // Try to send message to popup if it's open
     chrome.runtime
       .sendMessage({
         type: "backgroundEvent",
@@ -473,7 +514,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   console.log("🎯 Smart Tab Organizer installed/updated:", details.reason);
 
   if (details.reason === "install") {
-    // First time installation
     console.log("🎉 Welcome to Smart Tab Organizer!");
 
     // Set default settings
