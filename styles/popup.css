@@ -1,4 +1,5 @@
-{
+/* Fixed CSS - removed invalid selector */
+* {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -15,7 +16,7 @@ body {
 
 .container {
   width: 400px;
-  height: 600px;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   font-size: 14px;
@@ -90,6 +91,10 @@ body {
   background: rgba(255, 255, 255, 0.1);
   color: white;
   padding: 0;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-icon:hover {
@@ -596,7 +601,7 @@ body {
 /* Responsive Enhancements */
 @media (max-width: 420px) {
   .container {
-    width: 380px;
+    width: 100%;
     border-radius: 0;
   }
   

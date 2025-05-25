@@ -36,7 +36,6 @@ class PopupManager {
     this.ruleCategory = document.getElementById("ruleCategory");
     this.ruleValue = document.getElementById("ruleValue");
     this.addRuleBtn = document.getElementById("addRuleBtn");
-    this.loadingFavicon = document.querySelector(".loading-favicon");
   }
 
   setupEventListeners() {
@@ -48,12 +47,6 @@ class PopupManager {
     this.closeSettingsBtn.addEventListener("click", () => this.closeSettings());
     this.autoOrganize.addEventListener("change", () => this.saveSettings());
     this.addRuleBtn.addEventListener("click", () => this.addCustomRule());
-
-    // Handle loading favicon error
-    this.loadingFavicon.addEventListener("error", () => {
-      this.loadingFavicon.src =
-        'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>';
-    });
 
     // Drag-and-drop listeners
     this.categoriesContainer.addEventListener("dragstart", (e) => {
@@ -435,31 +428,51 @@ class PopupManager {
   }
 
   async openSettings() {
-    this.settingsPanel.style.display = "block";
+    // Show settings panel with animation
+    this.settingsPanel.style.display = "flex";
+    this.settingsPanel.classList.add("show");
+    
+    // Hide other elements
     this.categoriesContainer.style.display = "none";
     this.loadingState.style.display = "none";
     this.emptyState.style.display = "none";
     this.errorState.style.display = "none";
 
     // Load settings
-    const settings = await chrome.storage.local.get([
-      "settings",
-      "categoryRules",
-    ]);
-    this.autoOrganize.checked = settings.settings?.autoOrganize ?? true;
-    this.renderCustomRules(settings.categoryRules || {});
+    try {
+      const settings = await chrome.storage.local.get([
+        "settings",
+        "categoryRules",
+      ]);
+      this.autoOrganize.checked = settings.settings?.autoOrganize ?? true;
+      this.renderCustomRules(settings.categoryRules || {});
+    } catch (error) {
+      console.error("❌ Error loading settings:", error);
+    }
   }
 
   closeSettings() {
-    this.settingsPanel.style.display = "none";
+    // Hide settings panel with animation
+    this.settingsPanel.classList.remove("show");
+    setTimeout(() => {
+      this.settingsPanel.style.display = "none";
+    }, 300);
+    
+    // Show categories container
     this.categoriesContainer.style.display = "block";
+    this.updateUI();
   }
 
   async saveSettings() {
-    const settings = {
-      autoOrganize: this.autoOrganize.checked,
-    };
-    await chrome.storage.local.set({ settings });
+    try {
+      const settings = {
+        autoOrganize: this.autoOrganize.checked,
+      };
+      await chrome.storage.local.set({ settings });
+      console.log("✅ Settings saved:", settings);
+    } catch (error) {
+      console.error("❌ Error saving settings:", error);
+    }
   }
 
   async addCustomRule() {
@@ -467,21 +480,26 @@ class PopupManager {
     const value = this.ruleValue.value.trim();
     if (!category || !value) return;
 
-    const settings = await chrome.storage.local.get(["categoryRules"]);
-    const categoryRules = settings.categoryRules || {};
-    if (!categoryRules[category])
-      categoryRules[category] = { domains: [], keywords: [] };
+    try {
+      const settings = await chrome.storage.local.get(["categoryRules"]);
+      const categoryRules = settings.categoryRules || {};
+      if (!categoryRules[category])
+        categoryRules[category] = { domains: [], keywords: [] };
 
-    if (value.includes(".")) {
-      categoryRules[category].domains.push(value);
-    } else {
-      categoryRules[category].keywords.push(value);
+      if (value.includes(".")) {
+        categoryRules[category].domains.push(value);
+      } else {
+        categoryRules[category].keywords.push(value);
+      }
+
+      await chrome.storage.local.set({ categoryRules });
+      this.ruleValue.value = "";
+      this.renderCustomRules(categoryRules);
+      await this.loadTabs();
+      console.log("✅ Custom rule added:", { category, value });
+    } catch (error) {
+      console.error("❌ Error adding custom rule:", error);
     }
-
-    await chrome.storage.local.set({ categoryRules });
-    this.ruleValue.value = "";
-    this.renderCustomRules(categoryRules);
-    await this.loadTabs();
   }
 
   renderCustomRules(categoryRules) {
@@ -506,21 +524,26 @@ class PopupManager {
       <button title="Remove Rule">🗑️</button>
     `;
     rule.querySelector("button").addEventListener("click", async () => {
-      const settings = await chrome.storage.local.get(["categoryRules"]);
-      const categoryRules = settings.categoryRules || {};
-      if (categoryRules[category]) {
-        categoryRules[category][type + "s"] = categoryRules[category][
-          type + "s"
-        ].filter((v) => v !== value);
-        if (
-          !categoryRules[category].domains.length &&
-          !categoryRules[category].keywords.length
-        ) {
-          delete categoryRules[category];
+      try {
+        const settings = await chrome.storage.local.get(["categoryRules"]);
+        const categoryRules = settings.categoryRules || {};
+        if (categoryRules[category]) {
+          categoryRules[category][type + "s"] = categoryRules[category][
+            type + "s"
+          ].filter((v) => v !== value);
+          if (
+            !categoryRules[category].domains.length &&
+            !categoryRules[category].keywords.length
+          ) {
+            delete categoryRules[category];
+          }
+          await chrome.storage.local.set({ categoryRules });
+          this.renderCustomRules(categoryRules);
+          await this.loadTabs();
+          console.log("✅ Custom rule removed:", { category, value, type });
         }
-        await chrome.storage.local.set({ categoryRules });
-        this.renderCustomRules(categoryRules);
-        await this.loadTabs();
+      } catch (error) {
+        console.error("❌ Error removing custom rule:", error);
       }
     });
     this.customRules.appendChild(rule);
@@ -560,7 +583,7 @@ class PopupManager {
       const hostname = new URL(url).hostname;
       return `https://www.google.com/s2/favicons?domain=${hostname}`;
     } catch {
-      return "";
+      return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>';
     }
   }
 

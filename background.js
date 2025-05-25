@@ -56,7 +56,17 @@ class TabManager {
       }
     });
 
-    // Handle messages from popup
+    // Handle action button click to open side panel
+    chrome.action.onClicked.addListener(async (tab) => {
+      try {
+        // Open side panel for the current window
+        await chrome.sidePanel.open({ windowId: tab.windowId });
+      } catch (error) {
+        console.error("Error opening side panel:", error);
+      }
+    });
+
+    // Handle messages from popup/sidebar
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       this.handleMessage(message, sender, sendResponse);
       return true; // Keep message channel open for async response
@@ -525,6 +535,13 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         categorization: "auto",
       },
     });
+
+    // Enable side panel for all windows
+    try {
+      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    } catch (error) {
+      console.error("Error setting panel behavior:", error);
+    }
   }
 });
 
