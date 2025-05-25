@@ -1,5 +1,7 @@
 class PopupManager {
   constructor() {
+    console.log("🎯 PopupManager: Starting initialization");
+    
     this.tabs = [];
     this.categories = {};
     this.collapsedCategories = new Set();
@@ -14,6 +16,8 @@ class PopupManager {
 
     // Initialize
     this.init();
+    
+    console.log("🎯 PopupManager: Constructor complete");
   }
 
   setupDOMElements() {
@@ -96,47 +100,106 @@ class PopupManager {
   }
 
   async init() {
-    await this.loadTabs();
+    try {
+      // Show loading state immediately
+      this.showLoadingState();
+      
+      // Add small delay to ensure DOM is ready
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Check if background script is ready
+      await this.waitForBackground();
+      
+      // Load tabs
+      await this.loadTabs();
+    } catch (error) {
+      console.error("❌ Error during initialization:", error);
+      this.showErrorState("Failed to initialize extension");
+    }
+  }
+
+  async waitForBackground(maxRetries = 5) {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        console.log(`🔄 Checking background script (attempt ${i + 1}/${maxRetries})`);
+        const response = await chrome.runtime.sendMessage({ type: "ping" });
+        
+        if (response && response.success) {
+          console.log("✅ Background script is ready");
+          return;
+        }
+      } catch (error) {
+        console.log(`⏳ Background not ready yet, waiting...`);
+      }
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    throw new Error("Background script failed to initialize");
   }
 
   async loadTabs() {
-    if (this.isLoading) return;
+    // Prevent multiple simultaneous loads
+    if (this.isLoading) {
+      console.log("🔄 Already loading tabs, skipping...");
+      return;
+    }
 
     this.isLoading = true;
     this.showLoadingState();
 
     try {
+      console.log("📋 Loading tabs from background...");
+      
       const response = await chrome.runtime.sendMessage({ type: "getAllTabs" });
+      console.log("📨 Received response:", response);
 
-      if (response.success) {
+      if (response && response.success) {
         this.tabs = response.data.tabs || [];
         this.categories = response.data.categories || {};
+        
+        console.log(`✅ Loaded ${this.tabs.length} tabs`);
         this.updateUI();
       } else {
-        throw new Error(response.error || "Failed to load tabs");
+        const errorMsg = response?.error || "Failed to load tabs - no response";
+        console.error("❌ Load tabs error:", errorMsg);
+        throw new Error(errorMsg);
       }
     } catch (error) {
       console.error("❌ Error loading tabs:", error);
-      this.showErrorState(error.message);
+      this.showErrorState(error.message || "Failed to connect to background script");
     } finally {
       this.isLoading = false;
     }
   }
 
   updateUI() {
+    console.log("🎨 Updating UI with", this.tabs.length, "tabs");
+    
+    // Update tab count
     this.tabCount.textContent = this.tabs.length;
 
+    // Handle empty state
     if (this.tabs.length === 0) {
+      console.log("📂 No tabs found, showing empty state");
       this.showEmptyState();
       return;
     }
 
+    // Filter tabs based on search
     const filteredTabs = this.filterTabs();
+    console.log("🔍 Filtered to", filteredTabs.length, "tabs");
+
+    // Render categories
     this.renderCategories(filteredTabs);
 
+    // Show appropriate state
     if (filteredTabs.length === 0 && this.searchQuery) {
+      console.log("🔍 No search results found");
       this.showEmptyState();
     } else {
+      console.log("✅ Showing categories");
       this.showCategories();
     }
   }
@@ -393,6 +456,12 @@ class PopupManager {
   }
 
   async handleRefresh() {
+    console.log("🔄 Refresh button clicked");
+    
+    // Reset loading state
+    this.isLoading = false;
+    
+    // Force reload
     await this.loadTabs();
   }
 

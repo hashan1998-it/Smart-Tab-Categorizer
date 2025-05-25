@@ -13,14 +13,22 @@ class TabManager {
   async init() {
     console.log("🚀 Smart Tab Organizer: Initializing background service worker");
 
-    // Set up event listeners
-    this.setupEventListeners();
+    try {
+      // Load any existing tab data first
+      await this.loadTabData();
+      
+      // Set up event listeners
+      this.setupEventListeners();
 
-    // Initialize with current tabs
-    await this.refreshAllTabs();
+      // Initialize with current tabs
+      await this.refreshAllTabs();
 
-    this.isInitialized = true;
-    console.log("✅ Smart Tab Organizer: Initialization complete");
+      this.isInitialized = true;
+      console.log("✅ Smart Tab Organizer: Initialization complete");
+    } catch (error) {
+      console.error("❌ Error during initialization:", error);
+      this.isInitialized = false;
+    }
   }
 
   setupEventListeners() {
@@ -132,7 +140,17 @@ class TabManager {
     console.log("📨 Received message:", message.type);
 
     try {
+      // Ensure we're initialized before handling requests
+      if (!this.isInitialized && message.type !== "ping") {
+        console.log("⏳ Not initialized yet, initializing...");
+        await this.init();
+      }
+
       switch (message.type) {
+        case "ping":
+          sendResponse({ success: true, initialized: this.isInitialized });
+          break;
+
         case "getAllTabs":
           const allTabs = await this.getAllTabsWithCategories();
           sendResponse({ success: true, data: allTabs });
