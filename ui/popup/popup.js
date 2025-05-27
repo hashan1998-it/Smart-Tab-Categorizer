@@ -33,13 +33,13 @@ class PopupController {
     try {
       debugUtils.info('Initializing PopupController', 'PopupController');
       
-      // Set timeout to prevent infinite loading
+      // Set timeout to prevent infinite loading - REDUCED TO 5 SECONDS
       this.initializationTimeout = setTimeout(() => {
         if (!this.initialized) {
           debugUtils.warn('Initialization timeout reached', 'PopupController');
           this.handleInitializationTimeout();
         }
-      }, 10000); // 10 second timeout
+      }, 5000); // Reduced from 10 seconds to 5 seconds
       
       // Wait for DOM to be ready
       await this.waitForDOM();
@@ -50,17 +50,21 @@ class PopupController {
       // Show loading state immediately
       this.showLoadingState();
       
-      // Initialize UI state manager
-      await UIStateManager.init();
+      // Initialize UI state manager with error handling
+      try {
+        await UIStateManager.init();
+      } catch (error) {
+        debugUtils.warn('UIStateManager init failed, continuing with defaults', 'PopupController', error);
+      }
       
-      // Initialize components
-      await this.initializeComponents();
+      // Initialize components with individual error handling
+      await this.initializeComponentsSafely();
       
       // Setup event listeners
       this.setupEventListeners();
       
-      // Load initial data
-      await this.loadInitialData();
+      // Load initial data with timeout
+      await this.loadInitialDataWithTimeout();
       
       // Clear timeout
       if (this.initializationTimeout) {
@@ -69,6 +73,7 @@ class PopupController {
       }
       
       this.initialized = true;
+      UIStateManager.setLoading(false); // ENSURE LOADING STATE IS CLEARED
       debugUtils.info('PopupController initialized successfully', 'PopupController');
       
     } catch (error) {
@@ -80,7 +85,129 @@ class PopupController {
         this.initializationTimeout = null;
       }
       
+      // ALWAYS CLEAR LOADING STATE ON ERROR
+      UIStateManager.setLoading(false);
       this.showErrorState(error.message || ERROR_MESSAGES.INIT_FAILED);
+    }
+  }
+
+  /**
+   * Initialize components with individual error handling
+   */
+  async initializeComponentsSafely() {
+    try {
+      // Initialize search bar with error handling
+      if (this.elements.searchInput) {
+        try {
+          const searchBar = new SearchBar(this.elements.searchInput);
+          await searchBar.init();
+          this.components.set('searchBar', searchBar);
+          
+          // Setup search clear button
+          if (this.elements.searchClear) {
+            this.elements.searchClear.addEventListener('click', () => {
+              searchBar.clearSearch();
+            });
+          }
+        } catch (error) {
+          debugUtils.warn('SearchBar initialization failed, continuing without it', 'PopupController', error);
+        }
+      }
+
+      // Initialize tab list with error handling
+      try {
+        const tabList = new TabList(this.elements.categoriesContainer);
+        await tabList.init();
+        this.components.set('tabList', tabList);
+      } catch (error) {
+        debugUtils.warn('TabList initialization failed, continuing with basic functionality', 'PopupController', error);
+        // Create a basic fallback tab list
+        this.components.set('tabList', {
+          render: (tabs, categories) => this.renderBasicTabList(tabs, categories),
+          initialized: false
+        });
+      }
+
+      // Initialize settings panel with error handling
+      if (this.elements.settingsPanel) {
+        try {
+          const settingsPanel = new SettingsPanel(this.elements.settingsPanel);
+          await settingsPanel.init();
+          this.components.set('settingsPanel', settingsPanel);
+        } catch (error) {
+          debugUtils.warn('SettingsPanel initialization failed, continuing without it', 'PopupController', error);
+        }
+      }
+
+      // Initialize drag and drop manager with error handling
+      try {
+        const dragDropManager = new DragDropManager(this.elements.categoriesContainer);
+        await dragDropManager.init();
+        this.components.set('dragDropManager', dragDropManager);
+      } catch (error) {
+        debugUtils.warn('DragDropManager initialization failed, continuing without drag&drop', 'PopupController', error);
+      }
+
+      debugUtils.debug('Components initialized with fallbacks where needed', 'PopupController');
+    } catch (error) {
+      debugUtils.error('Failed to initialize components safely', 'PopupController', error);
+      // Don't throw error - continue with basic functionality
+    }
+  }
+
+  /**
+   * Load initial data with timeout protection
+   */
+  async loadInitialDataWithTimeout() {
+    try {
+      // Set loading state
+      UIStateManager.setLoading(true);
+      
+      // Race between data loading and timeout
+      await Promise.race([
+        this.loadInitialDataSafely(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Data loading timeout')), 3000)
+        )
+      ]);
+      
+    } catch (error) {
+      debugUtils.error('Failed to load initial data within timeout', 'PopupController', error);
+      // Try direct loading as final fallback
+      await this.loadTabsDirectly();
+    } finally {
+      // ALWAYS clear loading state
+      UIStateManager.setLoading(false);
+    }
+  }
+
+  /**
+   * Safely load initial data with retries
+   */
+  async loadInitialDataSafely() {
+    let retries = 0;
+    const maxRetries = 2;
+    
+    while (retries < maxRetries) {
+      try {
+        // Try to connect to background script first
+        await this.waitForBackground();
+        
+        // Load tabs data
+        await this.loadTabsData();
+        return; // Success
+        
+      } catch (error) {
+        retries++;
+        debugUtils.warn(`Data loading attempt ${retries} failed:`, 'PopupController', error);
+        
+        if (retries >= maxRetries) {
+          throw error;
+        }
+        
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
     }
   }
 
@@ -88,18 +215,341 @@ class PopupController {
    * Handle initialization timeout
    */
   handleInitializationTimeout() {
-    debugUtils.warn('Initialization timed out, attempting recovery', 'PopupController');
+    debugUtils.warn('Initialization timed out, forcing completion', 'PopupController');
     
-    // Try to load tabs directly as fallback
+    // Force clear loading state
+    UIStateManager.setLoading(false);
+    
+    // Try to load tabs directly as final attempt
     this.loadTabsDirectly().then(() => {
       this.initialized = true;
-      UIStateManager.setLoading(false);
+      this.updateUI();
     }).catch(error => {
-      debugUtils.error('Recovery failed', 'PopupController', error);
-      this.showErrorState('Extension took too long to load. Please try refreshing.');
+      debugUtils.error('Final recovery failed', 'PopupController', error);
+      this.showErrorState('Extension failed to load. Please refresh the page.');
     });
   }
 
+  /**
+   * Wait for background script to be ready with reduced timeout
+   */
+  async waitForBackground(maxRetries = 2) {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        console.log(`Checking background script (attempt ${i + 1}/${maxRetries})`);
+        
+        const response = await Promise.race([
+          chrome.runtime.sendMessage({ type: MESSAGE_TYPES.PING }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 1000)) // Reduced to 1 second
+        ]);
+        
+        if (response && response.success) {
+          console.log('✅ Background script is ready');
+          return;
+        }
+      } catch (error) {
+        console.log(`Background not ready yet (attempt ${i + 1}):`, error.message);
+      }
+      
+      // Wait before retrying - reduced wait time
+      if (i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    
+    // Don't throw error - proceed with direct tab loading
+    console.warn('Background script not ready, will use direct tab loading');
+  }
+
+  /**
+   * Load tabs data from background with timeout
+   */
+  async loadTabsData() {
+    if (this.isLoading) {
+      console.log('Already loading tabs, skipping...');
+      return;
+    }
+
+    this.isLoading = true;
+
+    try {
+      console.log('Loading tabs from background...');
+      
+      const response = await Promise.race([
+        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_ALL_TABS }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Request timeout')), 2000)) // Reduced timeout
+      ]);
+      
+      console.log('Response received:', response);
+
+      if (response && response.success && response.data) {
+        UIStateManager.setTabsData(response.data);
+        console.log(`✅ Loaded ${response.data.tabs?.length || 0} tabs from background`);
+      } else {
+        throw new Error(response?.error || 'Invalid response from background');
+      }
+    } catch (error) {
+      console.error('Failed to load tabs from background:', error);
+      // Fallback: get tabs directly
+      await this.loadTabsDirectly();
+    } finally {
+      this.isLoading = false;
+    }
+  }
+
+  /**
+   * Fallback method to load tabs directly
+   */
+  async loadTabsDirectly() {
+    try {
+      console.log('Loading tabs directly from Chrome API...');
+      
+      const chromeTabs = await chrome.tabs.query({});
+      
+      const tabs = chromeTabs.map(tab => ({
+        id: tab.id,
+        title: tab.title || 'Loading...',
+        url: tab.url || '',
+        favIconUrl: tab.favIconUrl || '',
+        active: tab.active || false,
+        pinned: tab.pinned || false,
+        windowId: tab.windowId,
+        createdAt: Date.now(),
+        lastAccessed: Date.now(),
+        accessCount: 0,
+        category: this.simpleCategorizeTab(tab)
+      }));
+
+      const categories = {};
+      tabs.forEach(tab => {
+        const category = tab.category || 'other';
+        categories[category] = (categories[category] || 0) + 1;
+      });
+
+      UIStateManager.setTabsData({
+        tabs,
+        categories,
+        totalCount: tabs.length
+      });
+
+      console.log(`✅ Loaded ${tabs.length} tabs directly`);
+    } catch (error) {
+      console.error('Failed to load tabs directly:', error);
+      UIStateManager.setError('Failed to load tabs');
+      throw error;
+    }
+  }
+
+  /**
+   * Simple tab categorization fallback
+   */
+  simpleCategorizeTab(tab) {
+    if (!tab.url) return 'other';
+    
+    const url = tab.url.toLowerCase();
+    const title = (tab.title || '').toLowerCase();
+    
+    if (url.includes('github.com') || url.includes('stackoverflow.com')) return 'development';
+    if (url.includes('youtube.com') || url.includes('netflix.com')) return 'entertainment';
+    if (url.includes('twitter.com') || url.includes('facebook.com')) return 'social';
+    if (url.includes('docs.google.com') || url.includes('notion.so')) return 'productivity';
+    if (url.includes('amazon.com') || url.includes('shop')) return 'shopping';
+    if (url.includes('news') || url.includes('cnn.com')) return 'news';
+    if (url.includes('wikipedia.org') || title.includes('tutorial')) return 'reference';
+    
+    return 'other';
+  }
+
+  /**
+   * Basic tab list renderer fallback
+   */
+  renderBasicTabList(tabs, categories) {
+    if (!this.elements.categoriesContainer) return;
+    
+    try {
+      this.elements.categoriesContainer.innerHTML = '';
+      
+      if (!tabs || tabs.length === 0) {
+        this.elements.categoriesContainer.innerHTML = `
+          <div style="text-align: center; padding: 40px; color: #64748b;">
+            <div style="font-size: 32px; margin-bottom: 16px;">📂</div>
+            <div style="font-weight: 600; margin-bottom: 8px;">No tabs found</div>
+            <div style="font-size: 14px;">Open some tabs to get started!</div>
+          </div>
+        `;
+        return;
+      }
+      
+      // Simple grouped rendering
+      const grouped = {};
+      tabs.forEach(tab => {
+        const category = tab.category || 'other';
+        if (!grouped[category]) grouped[category] = [];
+        grouped[category].push(tab);
+      });
+      
+      Object.entries(grouped).forEach(([category, categoryTabs]) => {
+        const categoryDiv = document.createElement('div');
+        categoryDiv.style.cssText = 'margin-bottom: 16px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);';
+        
+        categoryDiv.innerHTML = `
+          <div style="background: #f8fafc; padding: 12px 16px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">
+            ${category.charAt(0).toUpperCase() + category.slice(1)} (${categoryTabs.length})
+          </div>
+          <div>
+            ${categoryTabs.map(tab => `
+              <div style="padding: 12px 16px; border-bottom: 1px solid #f1f5f9; cursor: pointer; display: flex; align-items: center; gap: 12px;" 
+                   onclick="window.popupController?.focusTab(${tab.id})">
+                <img src="${tab.favIconUrl || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%2364748b" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>'}" 
+                     width="16" height="16" style="border-radius: 3px;">
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${tab.title || 'Loading...'}
+                  </div>
+                  <div style="font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${this.formatUrlForDisplay(tab.url)}
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+        
+        this.elements.categoriesContainer.appendChild(categoryDiv);
+      });
+      
+    } catch (error) {
+      debugUtils.error('Failed to render basic tab list', 'PopupController', error);
+    }
+  }
+
+  /**
+   * Format URL for display
+   */
+  formatUrlForDisplay(url) {
+    if (!url) return '';
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname + (urlObj.pathname !== '/' ? urlObj.pathname : '');
+    } catch {
+      return url;
+    }
+  }
+
+  /**
+   * Update UI based on current state
+   */
+  updateUI() {
+    const state = UIStateManager.getState();
+    
+    // Update tab count
+    if (this.elements.tabCount) {
+      this.elements.tabCount.textContent = state.totalCount || 0;
+    }
+
+    // Handle empty state
+    if (state.tabs.length === 0 && !state.isLoading) {
+      this.showEmptyState();
+      return;
+    }
+
+    // Update components
+    const tabList = this.components.get('tabList');
+    if (tabList && typeof tabList.render === 'function') {
+      tabList.render(state.tabs, state.categories);
+    }
+    
+    // Show categories if we have data
+    if (state.tabs.length > 0) {
+      this.showCategories();
+    }
+  }
+
+  /**
+   * Show loading state
+   */
+  showLoadingState() {
+    this.showState('loading');
+  }
+
+  /**
+   * Hide loading state
+   */
+  hideLoadingState() {
+    // Only hide loading if we're not currently loading
+    if (!this.isLoading && !UIStateManager.get('isLoading')) {
+      this.updateUI();
+    }
+  }
+
+  /**
+   * Show categories
+   */
+  showCategories() {
+    this.showState('categories');
+  }
+
+  /**
+   * Show empty state
+   */
+  showEmptyState() {
+    this.showState('empty');
+  }
+
+  /**
+   * Show error state
+   */
+  showErrorState(message) {
+    if (this.elements.errorMessage) {
+      this.elements.errorMessage.textContent = message;
+    }
+    this.showState('error');
+  }
+
+  /**
+   * Show specific state
+   */
+/**
+   * Show specific state - FIXED VERSION
+   */
+showState(state) {
+  const states = {
+    loading: this.elements.loadingState,
+    empty: this.elements.emptyState,
+    error: this.elements.errorState,
+    categories: this.elements.categoriesContainer
+  };
+
+  // Hide all states by removing show class and hiding elements
+  Object.entries(states).forEach(([stateName, element]) => {
+    if (element) {
+      // Remove show class for loading/empty/error states
+      if (stateName !== 'categories') {
+        element.classList.remove('show');
+        element.style.display = 'none';
+      } else {
+        // Hide categories container
+        element.style.display = 'none';
+      }
+    }
+  });
+
+  // Show requested state
+  const targetElement = states[state];
+  if (targetElement) {
+    if (state === 'categories') {
+      // Show categories container
+      targetElement.style.display = 'block';
+    } else {
+      // Show state element with CSS class
+      targetElement.style.display = 'flex';
+      // Add show class after a small delay to trigger CSS animation
+      setTimeout(() => {
+        targetElement.classList.add('show');
+      }, 10);
+    }
+  }
+}
   /**
    * Wait for DOM to be ready
    */
@@ -158,50 +608,6 @@ class PopupController {
     }
 
     debugUtils.debug('DOM elements setup completed', 'PopupController');
-  }
-
-  /**
-   * Initialize all components
-   */
-  async initializeComponents() {
-    try {
-      // Initialize search bar
-      if (this.elements.searchInput) {
-        const searchBar = new SearchBar(this.elements.searchInput);
-        await searchBar.init();
-        this.components.set('searchBar', searchBar);
-        
-        // Setup search clear button
-        if (this.elements.searchClear) {
-          this.elements.searchClear.addEventListener('click', () => {
-            searchBar.clearSearch();
-          });
-        }
-      }
-
-      // Initialize tab list
-      const tabList = new TabList(this.elements.categoriesContainer);
-      await tabList.init();
-      this.components.set('tabList', tabList);
-
-      // Initialize settings panel
-      if (this.elements.settingsPanel) {
-        const settingsPanel = new SettingsPanel(this.elements.settingsPanel);
-        await settingsPanel.init();
-        this.components.set('settingsPanel', settingsPanel);
-      }
-
-      // Initialize drag and drop manager
-      const dragDropManager = new DragDropManager(this.elements.categoriesContainer);
-      await dragDropManager.init();
-      this.components.set('dragDropManager', dragDropManager);
-
-      debugUtils.debug('All components initialized', 'PopupController');
-    } catch (error) {
-      debugUtils.error('Failed to initialize components', 'PopupController', error);
-      // Don't throw error - continue with basic functionality
-      debugUtils.warn('Continuing with basic functionality', 'PopupController');
-    }
   }
 
   /**
@@ -332,189 +738,6 @@ class PopupController {
   }
 
   /**
-   * Load initial data
-   */
-  async loadInitialData() {
-    try {
-      // Set loading state
-      UIStateManager.setLoading(true);
-      
-      // Try to connect to background script first
-      await this.waitForBackground();
-      
-      // Load tabs data
-      await this.loadTabsData();
-      
-    } catch (error) {
-      debugUtils.error('Failed to load initial data', 'PopupController', error);
-      // Try direct loading as fallback
-      await this.loadTabsDirectly();
-    } finally {
-      // Always clear loading state
-      UIStateManager.setLoading(false);
-    }
-  }
-
-  /**
-   * Wait for background script to be ready
-   */
-  async waitForBackground(maxRetries = 3) {
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        console.log(`Checking background script (attempt ${i + 1}/${maxRetries})`);
-        
-        const response = await Promise.race([
-          chrome.runtime.sendMessage({ type: MESSAGE_TYPES.PING }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
-        ]);
-        
-        if (response && response.success) {
-          console.log('✅ Background script is ready');
-          return;
-        }
-      } catch (error) {
-        console.log(`Background not ready yet (attempt ${i + 1}):`, error.message);
-      }
-      
-      // Wait before retrying
-      if (i < maxRetries - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    
-    // Don't throw error - proceed with direct tab loading
-    console.warn('Background script not ready, will use direct tab loading');
-  }
-
-  /**
-   * Load tabs data from background
-   */
-  async loadTabsData() {
-    if (this.isLoading) {
-      console.log('Already loading tabs, skipping...');
-      return;
-    }
-
-    this.isLoading = true;
-
-    try {
-      console.log('Loading tabs from background...');
-      
-      const response = await Promise.race([
-        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_ALL_TABS }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Request timeout')), 5000))
-      ]);
-      
-      console.log('Response received:', response);
-
-      if (response && response.success && response.data) {
-        UIStateManager.setTabsData(response.data);
-        console.log(`✅ Loaded ${response.data.tabs?.length || 0} tabs from background`);
-      } else {
-        throw new Error(response?.error || 'Invalid response from background');
-      }
-    } catch (error) {
-      console.error('Failed to load tabs from background:', error);
-      // Fallback: get tabs directly
-      await this.loadTabsDirectly();
-    } finally {
-      this.isLoading = false;
-    }
-  }
-
-  /**
-   * Fallback method to load tabs directly
-   */
-  async loadTabsDirectly() {
-    try {
-      console.log('Loading tabs directly from Chrome API...');
-      
-      const chromeTabs = await chrome.tabs.query({});
-      
-      const tabs = chromeTabs.map(tab => ({
-        id: tab.id,
-        title: tab.title || 'Loading...',
-        url: tab.url || '',
-        favIconUrl: tab.favIconUrl || '',
-        active: tab.active || false,
-        pinned: tab.pinned || false,
-        windowId: tab.windowId,
-        createdAt: Date.now(),
-        lastAccessed: Date.now(),
-        accessCount: 0,
-        category: this.simpleCategorizeTab(tab)
-      }));
-
-      const categories = {};
-      tabs.forEach(tab => {
-        const category = tab.category || 'other';
-        categories[category] = (categories[category] || 0) + 1;
-      });
-
-      UIStateManager.setTabsData({
-        tabs,
-        categories,
-        totalCount: tabs.length
-      });
-
-      console.log(`✅ Loaded ${tabs.length} tabs directly`);
-    } catch (error) {
-      console.error('Failed to load tabs directly:', error);
-      UIStateManager.setError('Failed to load tabs');
-      throw error;
-    }
-  }
-
-  /**
-   * Simple tab categorization fallback
-   */
-  simpleCategorizeTab(tab) {
-    if (!tab.url) return 'other';
-    
-    const url = tab.url.toLowerCase();
-    const title = (tab.title || '').toLowerCase();
-    
-    if (url.includes('github.com') || url.includes('stackoverflow.com')) return 'development';
-    if (url.includes('youtube.com') || url.includes('netflix.com')) return 'entertainment';
-    if (url.includes('twitter.com') || url.includes('facebook.com')) return 'social';
-    if (url.includes('docs.google.com') || url.includes('notion.so')) return 'productivity';
-    if (url.includes('amazon.com') || url.includes('shop')) return 'shopping';
-    if (url.includes('news') || url.includes('cnn.com')) return 'news';
-    if (url.includes('wikipedia.org') || title.includes('tutorial')) return 'reference';
-    
-    return 'other';
-  }
-
-  /**
-   * Update UI based on current state
-   */
-  updateUI() {
-    const state = UIStateManager.getState();
-    
-    // Update tab count
-    if (this.elements.tabCount) {
-      this.elements.tabCount.textContent = state.totalCount || 0;
-    }
-
-    // Handle empty state
-    if (state.tabs.length === 0 && !state.isLoading) {
-      this.showEmptyState();
-      return;
-    }
-
-    // Update components
-    const tabList = this.components.get('tabList');
-    if (tabList) {
-      tabList.render(state.tabs, state.categories);
-    }
-    
-    // Show categories if we have data
-    if (state.tabs.length > 0) {
-      this.showCategories();
-    }
-  }
-
-  /**
    * Update search results
    */
   updateSearchResults() {
@@ -525,7 +748,7 @@ class PopupController {
       this.showEmptyState();
     } else {
       const tabList = this.components.get('tabList');
-      if (tabList) {
+      if (tabList && typeof tabList.render === 'function') {
         tabList.render(filteredTabs, state.categories);
       }
       this.showCategories();
@@ -544,76 +767,10 @@ class PopupController {
   }
 
   /**
-   * Show loading state
-   */
-  showLoadingState() {
-    this.showState('loading');
-  }
-
-  /**
-   * Hide loading state
-   */
-  hideLoadingState() {
-    // Only hide loading if we're not currently loading
-    if (!this.isLoading && !UIStateManager.get('isLoading')) {
-      this.updateUI();
-    }
-  }
-
-  /**
-   * Show categories
-   */
-  showCategories() {
-    this.showState('categories');
-  }
-
-  /**
-   * Show empty state
-   */
-  showEmptyState() {
-    this.showState('empty');
-  }
-
-  /**
-   * Show error state
-   */
-  showErrorState(message) {
-    if (this.elements.errorMessage) {
-      this.elements.errorMessage.textContent = message;
-    }
-    this.showState('error');
-  }
-
-  /**
    * Hide error state
    */
   hideErrorState() {
     this.updateUI();
-  }
-
-  /**
-   * Show specific state
-   */
-  showState(state) {
-    const states = {
-      loading: this.elements.loadingState,
-      empty: this.elements.emptyState,
-      error: this.elements.errorState,
-      categories: this.elements.categoriesContainer
-    };
-
-    // Hide all states
-    Object.values(states).forEach(element => {
-      if (element) {
-        element.style.display = 'none';
-      }
-    });
-
-    // Show requested state
-    const targetElement = states[state];
-    if (targetElement) {
-      targetElement.style.display = state === 'categories' ? 'block' : 'flex';
-    }
   }
 
   /**
@@ -635,7 +792,7 @@ class PopupController {
       try {
         const response = await Promise.race([
           chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REFRESH_TABS }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000)) // Reduced timeout
         ]);
         
         if (response && response.success) {
@@ -679,7 +836,7 @@ class PopupController {
    */
   async handleRetry() {
     UIStateManager.clearError();
-    await this.loadInitialData();
+    await this.loadInitialDataWithTimeout();
   }
 
   /**
@@ -692,7 +849,7 @@ class PopupController {
       UIStateManager.setView('settings');
       const settingsPanel = this.components.get('settingsPanel');
       
-      if (settingsPanel) {
+      if (settingsPanel && typeof settingsPanel.show === 'function') {
         settingsPanel.show();
       } else {
         // Fallback: manually show settings panel
@@ -716,7 +873,7 @@ class PopupController {
       UIStateManager.setView('categories');
       const settingsPanel = this.components.get('settingsPanel');
       
-      if (settingsPanel) {
+      if (settingsPanel && typeof settingsPanel.hide === 'function') {
         settingsPanel.hide();
       } else {
         // Fallback: manually hide settings panel

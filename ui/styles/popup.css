@@ -1,4 +1,4 @@
-/* Smart Tab Organizer - Fixed Loading State Styles */
+/* Smart Tab Organizer - FIXED Loading State Styles */
 
 /* CSS Variables for theming */
 :root {
@@ -328,7 +328,7 @@ body {
   background: var(--text-muted);
 }
 
-/* FIXED STATES - PROPER CENTERING */
+/* FIXED STATES - REMOVED !important FROM LOADING STATE */
 .loading-state,
 .empty-state,
 .error-state {
@@ -337,7 +337,7 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  display: flex;
+  display: none; /* All states start hidden */
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -347,14 +347,17 @@ body {
   z-index: 5;
 }
 
-/* Override default display none */
-.loading-state {
-  display: flex !important;
+/* Show states when needed - NO !important */
+.loading-state.show {
+  display: flex;
 }
 
-.empty-state,
-.error-state {
-  display: none;
+.empty-state.show {
+  display: flex;
+}
+
+.error-state.show {
+  display: flex;
 }
 
 /* Spinner */
