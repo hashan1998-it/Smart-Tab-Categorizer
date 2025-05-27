@@ -1,5 +1,5 @@
 /**
- * Main popup controller
+ * Main popup controller - FIXED VERSION
  * Orchestrates all popup functionality and UI components
  */
 
@@ -9,7 +9,6 @@ import DOMUtils from '../shared/utils/DOMUtils.js';
 import ValidationUtils from '../shared/utils/ValidationUtils.js';
 import UIStateManager from './managers/UIStateManager.js';
 import TabList from './components/TabList.js';
-import CategorySection from './components/CategorySection.js';
 import SearchBar from './components/SearchBar.js';
 import SettingsPanel from './components/SettingsPanel.js';
 import DragDropManager from './managers/DragDropManager.js';
@@ -19,6 +18,7 @@ class PopupController {
     this.components = new Map();
     this.initialized = false;
     this.isLoading = false;
+    this.initializationTimeout = null;
     
     // DOM elements will be set after initialization
     this.elements = {};
@@ -33,11 +33,22 @@ class PopupController {
     try {
       debugUtils.info('Initializing PopupController', 'PopupController');
       
+      // Set timeout to prevent infinite loading
+      this.initializationTimeout = setTimeout(() => {
+        if (!this.initialized) {
+          debugUtils.warn('Initialization timeout reached', 'PopupController');
+          this.handleInitializationTimeout();
+        }
+      }, 10000); // 10 second timeout
+      
       // Wait for DOM to be ready
       await this.waitForDOM();
       
       // Setup DOM elements
       this.setupDOMElements();
+      
+      // Show loading state immediately
+      this.showLoadingState();
       
       // Initialize UI state manager
       await UIStateManager.init();
@@ -51,13 +62,42 @@ class PopupController {
       // Load initial data
       await this.loadInitialData();
       
+      // Clear timeout
+      if (this.initializationTimeout) {
+        clearTimeout(this.initializationTimeout);
+        this.initializationTimeout = null;
+      }
+      
       this.initialized = true;
       debugUtils.info('PopupController initialized successfully', 'PopupController');
       
     } catch (error) {
       debugUtils.error('Failed to initialize PopupController', 'PopupController', error);
+      
+      // Clear timeout on error
+      if (this.initializationTimeout) {
+        clearTimeout(this.initializationTimeout);
+        this.initializationTimeout = null;
+      }
+      
       this.showErrorState(error.message || ERROR_MESSAGES.INIT_FAILED);
     }
+  }
+
+  /**
+   * Handle initialization timeout
+   */
+  handleInitializationTimeout() {
+    debugUtils.warn('Initialization timed out, attempting recovery', 'PopupController');
+    
+    // Try to load tabs directly as fallback
+    this.loadTabsDirectly().then(() => {
+      this.initialized = true;
+      UIStateManager.setLoading(false);
+    }).catch(error => {
+      debugUtils.error('Recovery failed', 'PopupController', error);
+      this.showErrorState('Extension took too long to load. Please try refreshing.');
+    });
   }
 
   /**
@@ -89,6 +129,7 @@ class PopupController {
       
       // Search elements
       searchInput: DOMUtils.querySelector('#searchInput'),
+      searchClear: DOMUtils.querySelector('#searchClear'),
       
       // State elements
       loadingState: DOMUtils.querySelector('#loadingState'),
@@ -125,9 +166,18 @@ class PopupController {
   async initializeComponents() {
     try {
       // Initialize search bar
-      const searchBar = new SearchBar(this.elements.searchInput);
-      await searchBar.init();
-      this.components.set('searchBar', searchBar);
+      if (this.elements.searchInput) {
+        const searchBar = new SearchBar(this.elements.searchInput);
+        await searchBar.init();
+        this.components.set('searchBar', searchBar);
+        
+        // Setup search clear button
+        if (this.elements.searchClear) {
+          this.elements.searchClear.addEventListener('click', () => {
+            searchBar.clearSearch();
+          });
+        }
+      }
 
       // Initialize tab list
       const tabList = new TabList(this.elements.categoriesContainer);
@@ -149,7 +199,8 @@ class PopupController {
       debugUtils.debug('All components initialized', 'PopupController');
     } catch (error) {
       debugUtils.error('Failed to initialize components', 'PopupController', error);
-      throw error;
+      // Don't throw error - continue with basic functionality
+      debugUtils.warn('Continuing with basic functionality', 'PopupController');
     }
   }
 
@@ -160,27 +211,42 @@ class PopupController {
     try {
       // Refresh button
       if (this.elements.refreshBtn) {
-        this.elements.refreshBtn.addEventListener('click', () => this.handleRefresh());
+        this.elements.refreshBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.handleRefresh();
+        });
       }
 
       // Settings button
       if (this.elements.settingsBtn) {
-        this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
+        this.elements.settingsBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.openSettings();
+        });
       }
 
       // Close settings button
       if (this.elements.closeSettingsBtn) {
-        this.elements.closeSettingsBtn.addEventListener('click', () => this.closeSettings());
+        this.elements.closeSettingsBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.closeSettings();
+        });
       }
 
       // New tab button
       if (this.elements.newTabBtn) {
-        this.elements.newTabBtn.addEventListener('click', () => this.handleNewTab());
+        this.elements.newTabBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.handleNewTab();
+        });
       }
 
       // Retry button
       if (this.elements.retryBtn) {
-        this.elements.retryBtn.addEventListener('click', () => this.handleRetry());
+        this.elements.retryBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.handleRetry();
+        });
       }
 
       // State manager subscriptions
@@ -236,11 +302,15 @@ class PopupController {
    * Setup background message listener
    */
   setupMessageListener() {
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      if (message.type === MESSAGE_TYPES.BACKGROUND_EVENT) {
-        this.handleBackgroundEvent(message.eventType, message.data);
-      }
-    });
+    try {
+      chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.type === MESSAGE_TYPES.BACKGROUND_EVENT) {
+          this.handleBackgroundEvent(message.eventType, message.data);
+        }
+      });
+    } catch (error) {
+      debugUtils.warn('Failed to setup message listener', 'PopupController', error);
+    }
   }
 
   /**
@@ -266,11 +336,22 @@ class PopupController {
    */
   async loadInitialData() {
     try {
+      // Set loading state
+      UIStateManager.setLoading(true);
+      
+      // Try to connect to background script first
       await this.waitForBackground();
+      
+      // Load tabs data
       await this.loadTabsData();
+      
     } catch (error) {
       debugUtils.error('Failed to load initial data', 'PopupController', error);
-      UIStateManager.setError(error.message || ERROR_MESSAGES.LOAD_TABS_FAILED);
+      // Try direct loading as fallback
+      await this.loadTabsDirectly();
+    } finally {
+      // Always clear loading state
+      UIStateManager.setLoading(false);
     }
   }
 
@@ -282,22 +363,27 @@ class PopupController {
       try {
         console.log(`Checking background script (attempt ${i + 1}/${maxRetries})`);
         
-        const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.PING });
+        const response = await Promise.race([
+          chrome.runtime.sendMessage({ type: MESSAGE_TYPES.PING }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000))
+        ]);
         
         if (response && response.success) {
           console.log('✅ Background script is ready');
           return;
         }
       } catch (error) {
-        console.log(`Background not ready yet (attempt ${i + 1}), waiting...`);
+        console.log(`Background not ready yet (attempt ${i + 1}):`, error.message);
       }
       
-      // Wait before retrying (shorter delays)
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Wait before retrying
+      if (i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
     
-    // Don't throw error - proceed with limited functionality
-    console.warn('Background script not fully ready, proceeding with basic functionality');
+    // Don't throw error - proceed with direct tab loading
+    console.warn('Background script not ready, will use direct tab loading');
   }
 
   /**
@@ -310,29 +396,29 @@ class PopupController {
     }
 
     this.isLoading = true;
-    UIStateManager.setLoading(true);
 
     try {
       console.log('Loading tabs from background...');
       
-      const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_ALL_TABS });
+      const response = await Promise.race([
+        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_ALL_TABS }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Request timeout')), 5000))
+      ]);
+      
       console.log('Response received:', response);
 
       if (response && response.success && response.data) {
         UIStateManager.setTabsData(response.data);
-        console.log(`✅ Loaded ${response.data.tabs?.length || 0} tabs`);
+        console.log(`✅ Loaded ${response.data.tabs?.length || 0} tabs from background`);
       } else {
-        // Fallback: get tabs directly if background isn't working
-        console.warn('Background response failed, using direct tab query');
-        await this.loadTabsDirectly();
+        throw new Error(response?.error || 'Invalid response from background');
       }
     } catch (error) {
-      console.error('Failed to load tabs data:', error);
+      console.error('Failed to load tabs from background:', error);
       // Fallback: get tabs directly
       await this.loadTabsDirectly();
     } finally {
       this.isLoading = false;
-      UIStateManager.setLoading(false);
     }
   }
 
@@ -341,6 +427,8 @@ class PopupController {
    */
   async loadTabsDirectly() {
     try {
+      console.log('Loading tabs directly from Chrome API...');
+      
       const chromeTabs = await chrome.tabs.query({});
       
       const tabs = chromeTabs.map(tab => ({
@@ -373,6 +461,7 @@ class PopupController {
     } catch (error) {
       console.error('Failed to load tabs directly:', error);
       UIStateManager.setError('Failed to load tabs');
+      throw error;
     }
   }
 
@@ -414,7 +503,10 @@ class PopupController {
     }
 
     // Update components
-    this.components.get('tabList')?.render(state.tabs, state.categories);
+    const tabList = this.components.get('tabList');
+    if (tabList) {
+      tabList.render(state.tabs, state.categories);
+    }
     
     // Show categories if we have data
     if (state.tabs.length > 0) {
@@ -432,7 +524,10 @@ class PopupController {
     if (filteredTabs.length === 0 && state.searchQuery) {
       this.showEmptyState();
     } else {
-      this.components.get('tabList')?.render(filteredTabs, state.categories);
+      const tabList = this.components.get('tabList');
+      if (tabList) {
+        tabList.render(filteredTabs, state.categories);
+      }
       this.showCategories();
     }
   }
@@ -459,8 +554,8 @@ class PopupController {
    * Hide loading state
    */
   hideLoadingState() {
-    // Don't hide loading if we're still loading
-    if (!this.isLoading) {
+    // Only hide loading if we're not currently loading
+    if (!this.isLoading && !UIStateManager.get('isLoading')) {
       this.updateUI();
     }
   }
@@ -528,20 +623,41 @@ class PopupController {
     debugUtils.info('Refresh button clicked', 'PopupController');
     
     try {
-      UIStateManager.setLoading(true);
-      
-      const response = await chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REFRESH_TABS });
-      
-      if (response && response.success) {
-        UIStateManager.setTabsData(response.data);
-      } else {
-        throw new Error(response?.error || 'Refresh failed');
+      // Disable refresh button to prevent multiple clicks
+      if (this.elements.refreshBtn) {
+        this.elements.refreshBtn.disabled = true;
       }
+      
+      UIStateManager.setLoading(true);
+      UIStateManager.clearError();
+      
+      // Try background first, then fallback to direct
+      try {
+        const response = await Promise.race([
+          chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REFRESH_TABS }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+        ]);
+        
+        if (response && response.success) {
+          UIStateManager.setTabsData(response.data);
+        } else {
+          throw new Error(response?.error || 'Refresh failed');
+        }
+      } catch (error) {
+        console.warn('Background refresh failed, trying direct:', error);
+        await this.loadTabsDirectly();
+      }
+      
     } catch (error) {
       debugUtils.error('Failed to refresh', 'PopupController', error);
       UIStateManager.setError(error.message);
     } finally {
       UIStateManager.setLoading(false);
+      
+      // Re-enable refresh button
+      if (this.elements.refreshBtn) {
+        this.elements.refreshBtn.disabled = false;
+      }
     }
   }
 
@@ -563,17 +679,30 @@ class PopupController {
    */
   async handleRetry() {
     UIStateManager.clearError();
-    await this.loadTabsData();
+    await this.loadInitialData();
   }
 
   /**
    * Open settings panel
    */
   openSettings() {
-    UIStateManager.setView('settings');
-    const settingsPanel = this.components.get('settingsPanel');
-    if (settingsPanel) {
-      settingsPanel.show();
+    debugUtils.info('Opening settings panel', 'PopupController');
+    
+    try {
+      UIStateManager.setView('settings');
+      const settingsPanel = this.components.get('settingsPanel');
+      
+      if (settingsPanel) {
+        settingsPanel.show();
+      } else {
+        // Fallback: manually show settings panel
+        if (this.elements.settingsPanel) {
+          this.elements.settingsPanel.style.display = 'flex';
+          this.elements.settingsPanel.classList.add('show');
+        }
+      }
+    } catch (error) {
+      debugUtils.error('Failed to open settings', 'PopupController', error);
     }
   }
 
@@ -581,10 +710,25 @@ class PopupController {
    * Close settings panel
    */
   closeSettings() {
-    UIStateManager.setView('categories');
-    const settingsPanel = this.components.get('settingsPanel');
-    if (settingsPanel) {
-      settingsPanel.hide();
+    debugUtils.info('Closing settings panel', 'PopupController');
+    
+    try {
+      UIStateManager.setView('categories');
+      const settingsPanel = this.components.get('settingsPanel');
+      
+      if (settingsPanel) {
+        settingsPanel.hide();
+      } else {
+        // Fallback: manually hide settings panel
+        if (this.elements.settingsPanel) {
+          this.elements.settingsPanel.classList.remove('show');
+          setTimeout(() => {
+            this.elements.settingsPanel.style.display = 'none';
+          }, 300);
+        }
+      }
+    } catch (error) {
+      debugUtils.error('Failed to close settings', 'PopupController', error);
     }
   }
 
@@ -683,6 +827,12 @@ class PopupController {
    */
   cleanup() {
     try {
+      // Clear timeout
+      if (this.initializationTimeout) {
+        clearTimeout(this.initializationTimeout);
+        this.initializationTimeout = null;
+      }
+      
       // Cleanup components
       this.components.forEach(component => {
         if (typeof component.cleanup === 'function') {
@@ -703,7 +853,24 @@ class PopupController {
 
 // Initialize the popup when DOM is ready
 const popupController = new PopupController();
-popupController.init();
+
+// Add error handling for initialization
+popupController.init().catch(error => {
+  console.error('Failed to initialize popup controller:', error);
+  
+  // Show basic error message if possible
+  const errorState = document.querySelector('#errorState');
+  const errorMessage = document.querySelector('#errorMessage');
+  const loadingState = document.querySelector('#loadingState');
+  
+  if (loadingState) loadingState.style.display = 'none';
+  if (errorState) {
+    errorState.style.display = 'flex';
+    if (errorMessage) {
+      errorMessage.textContent = 'Failed to initialize extension. Please refresh the page.';
+    }
+  }
+});
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {

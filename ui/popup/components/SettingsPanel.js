@@ -1,5 +1,5 @@
 /**
- * Settings Panel Component
+ * Settings Panel Component - FIXED VERSION
  * Manages extension settings and custom categorization rules
  */
 
@@ -16,6 +16,7 @@ class SettingsPanel {
     this.settings = {};
     this.initialized = false;
     this.isVisible = false;
+    this.eventListeners = new Map(); // Track event listeners for proper cleanup
   }
 
   /**
@@ -29,10 +30,14 @@ class SettingsPanel {
 
       debugUtils.info('Initializing SettingsPanel component', 'SettingsPanel');
       
+      // Ensure panel is hidden initially
+      this.panelElement.style.display = 'none';
+      this.panelElement.classList.remove('show');
+      
       await this.loadSettings();
       await this.loadCustomRules();
-      this.setupEventListeners();
       this.render();
+      this.setupEventListeners();
       
       this.initialized = true;
       debugUtils.info('SettingsPanel component initialized successfully', 'SettingsPanel');
@@ -84,61 +89,136 @@ class SettingsPanel {
   }
 
   /**
-   * Setup event listeners
+   * Setup event listeners with proper cleanup tracking
    */
   setupEventListeners() {
-    // Close button
-    const closeBtn = this.panelElement.querySelector('#closeSettingsBtn');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => this.hide());
-    }
+    try {
+      // Clear existing listeners first
+      this.clearEventListeners();
 
-    // Settings form changes
+      // Close button
+      const closeBtn = this.panelElement.querySelector('#closeSettingsBtn');
+      if (closeBtn) {
+        const closeHandler = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.hide();
+        };
+        closeBtn.addEventListener('click', closeHandler);
+        this.eventListeners.set('closeBtn', { element: closeBtn, event: 'click', handler: closeHandler });
+      }
+
+      // Settings form changes
+      this.setupSettingsListeners();
+      this.setupCustomRulesListeners();
+      this.setupDataManagementListeners();
+
+      debugUtils.debug('Event listeners setup completed', 'SettingsPanel');
+    } catch (error) {
+      debugUtils.error('Failed to setup event listeners', 'SettingsPanel', error);
+    }
+  }
+
+  /**
+   * Setup settings form listeners
+   */
+  setupSettingsListeners() {
     const autoOrganizeCheckbox = this.panelElement.querySelector('#autoOrganize');
     if (autoOrganizeCheckbox) {
-      autoOrganizeCheckbox.addEventListener('change', () => this.handleSettingChange());
+      const handler = () => this.handleSettingChange();
+      autoOrganizeCheckbox.addEventListener('change', handler);
+      this.eventListeners.set('autoOrganize', { element: autoOrganizeCheckbox, event: 'change', handler });
     }
 
     const showNotificationsCheckbox = this.panelElement.querySelector('#showNotifications');
     if (showNotificationsCheckbox) {
-      showNotificationsCheckbox.addEventListener('change', () => this.handleSettingChange());
+      const handler = () => this.handleSettingChange();
+      showNotificationsCheckbox.addEventListener('change', handler);
+      this.eventListeners.set('showNotifications', { element: showNotificationsCheckbox, event: 'change', handler });
     }
 
     const themeSelect = this.panelElement.querySelector('#themeSelect');
     if (themeSelect) {
-      themeSelect.addEventListener('change', () => this.handleSettingChange());
+      const handler = () => this.handleSettingChange();
+      themeSelect.addEventListener('change', handler);
+      this.eventListeners.set('themeSelect', { element: themeSelect, event: 'change', handler });
     }
+  }
 
-    // Custom rules
+  /**
+   * Setup custom rules listeners
+   */
+  setupCustomRulesListeners() {
     const addRuleBtn = this.panelElement.querySelector('#addRuleBtn');
     if (addRuleBtn) {
-      addRuleBtn.addEventListener('click', () => this.handleAddRule());
+      const handler = (e) => {
+        e.preventDefault();
+        this.handleAddRule();
+      };
+      addRuleBtn.addEventListener('click', handler);
+      this.eventListeners.set('addRuleBtn', { element: addRuleBtn, event: 'click', handler });
     }
 
     const ruleValueInput = this.panelElement.querySelector('#ruleValue');
     if (ruleValueInput) {
-      ruleValueInput.addEventListener('keypress', (e) => {
+      const handler = (e) => {
         if (e.key === 'Enter') {
+          e.preventDefault();
           this.handleAddRule();
         }
-      });
+      };
+      ruleValueInput.addEventListener('keypress', handler);
+      this.eventListeners.set('ruleValueInput', { element: ruleValueInput, event: 'keypress', handler });
     }
+  }
 
-    // Export/Import buttons
+  /**
+   * Setup data management listeners
+   */
+  setupDataManagementListeners() {
     const exportBtn = this.panelElement.querySelector('#exportSettings');
     if (exportBtn) {
-      exportBtn.addEventListener('click', () => this.handleExportSettings());
+      const handler = (e) => {
+        e.preventDefault();
+        this.handleExportSettings();
+      };
+      exportBtn.addEventListener('click', handler);
+      this.eventListeners.set('exportBtn', { element: exportBtn, event: 'click', handler });
     }
 
     const importBtn = this.panelElement.querySelector('#importSettings');
     if (importBtn) {
-      importBtn.addEventListener('click', () => this.handleImportSettings());
+      const handler = (e) => {
+        e.preventDefault();
+        this.handleImportSettings();
+      };
+      importBtn.addEventListener('click', handler);
+      this.eventListeners.set('importBtn', { element: importBtn, event: 'click', handler });
     }
 
     const resetBtn = this.panelElement.querySelector('#resetSettings');
     if (resetBtn) {
-      resetBtn.addEventListener('click', () => this.handleResetSettings());
+      const handler = (e) => {
+        e.preventDefault();
+        this.handleResetSettings();
+      };
+      resetBtn.addEventListener('click', handler);
+      this.eventListeners.set('resetBtn', { element: resetBtn, event: 'click', handler });
     }
+  }
+
+  /**
+   * Clear all event listeners
+   */
+  clearEventListeners() {
+    this.eventListeners.forEach((listener, key) => {
+      try {
+        listener.element.removeEventListener(listener.event, listener.handler);
+      } catch (error) {
+        debugUtils.warn(`Failed to remove listener: ${key}`, 'SettingsPanel', error);
+      }
+    });
+    this.eventListeners.clear();
   }
 
   /**
@@ -148,6 +228,8 @@ class SettingsPanel {
     try {
       this.renderSettings();
       this.renderCustomRules();
+      // Re-setup event listeners after rendering
+      this.setupEventListeners();
     } catch (error) {
       debugUtils.error('Failed to render settings panel', 'SettingsPanel', error);
     }
@@ -157,8 +239,14 @@ class SettingsPanel {
    * Render settings form
    */
   renderSettings() {
-    const settingsContent = this.panelElement.querySelector('.settings-content');
-    if (!settingsContent) return;
+    let settingsContent = this.panelElement.querySelector('.settings-content');
+    if (!settingsContent) {
+      // Create settings content if it doesn't exist
+      settingsContent = DOMUtils.createElement('div', {
+        classes: ['settings-content']
+      });
+      this.panelElement.appendChild(settingsContent);
+    }
 
     // Clear existing content
     settingsContent.innerHTML = '';
@@ -233,9 +321,6 @@ class SettingsPanel {
     });
 
     settingsContent.appendChild(dataSection);
-
-    // Re-setup event listeners for new elements
-    this.setupEventListeners();
   }
 
   /**
@@ -249,16 +334,20 @@ class SettingsPanel {
 
     Object.entries(this.customRules).forEach(([category, rules]) => {
       // Render domains
-      rules.domains?.forEach(domain => {
-        const ruleElement = this.createRuleElement(category, domain, 'domain');
-        rulesList.appendChild(ruleElement);
-      });
+      if (rules.domains) {
+        rules.domains.forEach(domain => {
+          const ruleElement = this.createRuleElement(category, domain, 'domain');
+          rulesList.appendChild(ruleElement);
+        });
+      }
 
       // Render keywords
-      rules.keywords?.forEach(keyword => {
-        const ruleElement = this.createRuleElement(category, keyword, 'keyword');
-        rulesList.appendChild(ruleElement);
-      });
+      if (rules.keywords) {
+        rules.keywords.forEach(keyword => {
+          const ruleElement = this.createRuleElement(category, keyword, 'keyword');
+          rulesList.appendChild(ruleElement);
+        });
+      }
     });
 
     // Update rule count
@@ -292,7 +381,10 @@ class SettingsPanel {
     // Add remove event listener
     const removeBtn = ruleElement.querySelector('.rule-remove');
     if (removeBtn) {
-      removeBtn.addEventListener('click', () => this.handleRemoveRule(category, value, type));
+      removeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.handleRemoveRule(category, value, type);
+      });
     }
 
     return ruleElement;
@@ -318,6 +410,7 @@ class SettingsPanel {
       const validation = ValidationUtils.validateSettings(newSettings);
       if (!validation.valid) {
         debugUtils.warn('Invalid settings', 'SettingsPanel', validation.errors);
+        this.showNotification(validation.errors[0], 'error');
         return;
       }
 
@@ -331,6 +424,7 @@ class SettingsPanel {
       // Apply theme immediately
       this.applyTheme(validation.sanitized.theme);
 
+      this.showNotification('Settings saved successfully', 'success');
       debugUtils.info('Settings saved', 'SettingsPanel', validation.sanitized);
     } catch (error) {
       debugUtils.error('Failed to save settings', 'SettingsPanel', error);
@@ -353,6 +447,7 @@ class SettingsPanel {
 
       if (!value) {
         this.showNotification('Please enter a domain or keyword', 'warning');
+        valueInput.focus();
         return;
       }
 
@@ -366,6 +461,7 @@ class SettingsPanel {
       const validation = ValidationUtils.validateCustomRule(category, value);
       if (!validation.valid) {
         this.showNotification(validation.errors[0], 'error');
+        valueInput.focus();
         return;
       }
 
@@ -380,6 +476,7 @@ class SettingsPanel {
       // Check for duplicates
       if (this.customRules[category][ruleArray].includes(cleanValue)) {
         this.showNotification('This rule already exists', 'warning');
+        valueInput.focus();
         return;
       }
 
@@ -394,7 +491,11 @@ class SettingsPanel {
       this.renderCustomRules();
 
       // Notify background to refresh categorization
-      chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REFRESH_TABS });
+      try {
+        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REFRESH_TABS });
+      } catch (error) {
+        debugUtils.warn('Failed to notify background about rule change', 'SettingsPanel', error);
+      }
 
       this.showNotification('Rule added successfully', 'success');
       debugUtils.info('Custom rule added', 'SettingsPanel', { category, value: cleanValue, type: validation.type });
@@ -422,8 +523,8 @@ class SettingsPanel {
 
       // Clean up empty categories
       if (rules.length === 0 && 
-          this.customRules[category].domains.length === 0 && 
-          this.customRules[category].keywords.length === 0) {
+          (!this.customRules[category].domains || this.customRules[category].domains.length === 0) && 
+          (!this.customRules[category].keywords || this.customRules[category].keywords.length === 0)) {
         delete this.customRules[category];
       }
 
@@ -434,7 +535,11 @@ class SettingsPanel {
       this.renderCustomRules();
 
       // Notify background to refresh categorization
-      chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REFRESH_TABS });
+      try {
+        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REFRESH_TABS });
+      } catch (error) {
+        debugUtils.warn('Failed to notify background about rule removal', 'SettingsPanel', error);
+      }
 
       this.showNotification('Rule removed', 'success');
       debugUtils.info('Custom rule removed', 'SettingsPanel', { category, value, type });
@@ -480,8 +585,16 @@ class SettingsPanel {
    * Handle import settings
    */
   handleImportSettings() {
-    const fileInput = this.panelElement.querySelector('#importFile');
-    if (!fileInput) return;
+    let fileInput = this.panelElement.querySelector('#importFile');
+    if (!fileInput) {
+      // Create file input if it doesn't exist
+      fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = '.json';
+      fileInput.style.display = 'none';
+      fileInput.id = 'importFile';
+      this.panelElement.appendChild(fileInput);
+    }
 
     fileInput.onchange = async (e) => {
       const file = e.target.files[0];
@@ -503,6 +616,7 @@ class SettingsPanel {
             this.settings = validation.sanitized;
             await chrome.storage.local.set({ settings: validation.sanitized });
             UIStateManager.updateSettings(validation.sanitized);
+            this.applyTheme(validation.sanitized.theme);
           }
         }
 
@@ -514,13 +628,18 @@ class SettingsPanel {
 
         // Re-render and refresh
         this.render();
-        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REFRESH_TABS });
+        
+        try {
+          chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REFRESH_TABS });
+        } catch (error) {
+          debugUtils.warn('Failed to notify background about import', 'SettingsPanel', error);
+        }
 
         this.showNotification('Settings imported successfully', 'success');
         debugUtils.info('Settings imported', 'SettingsPanel');
       } catch (error) {
         debugUtils.error('Failed to import settings', 'SettingsPanel', error);
-        this.showNotification('Failed to import settings', 'error');
+        this.showNotification('Failed to import settings. Please check the file format.', 'error');
       }
 
       // Reset file input
@@ -556,10 +675,16 @@ class SettingsPanel {
 
       // Update UI state
       UIStateManager.updateSettings(this.settings);
+      this.applyTheme(this.settings.theme);
 
       // Re-render and refresh
       this.render();
-      chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REFRESH_TABS });
+      
+      try {
+        chrome.runtime.sendMessage({ type: MESSAGE_TYPES.REFRESH_TABS });
+      } catch (error) {
+        debugUtils.warn('Failed to notify background about reset', 'SettingsPanel', error);
+      }
 
       this.showNotification('Settings reset successfully', 'success');
       debugUtils.info('Settings reset', 'SettingsPanel');
@@ -574,11 +699,11 @@ class SettingsPanel {
    */
   applyTheme(theme) {
     try {
-      document.documentElement.setAttribute('data-theme', theme);
-      
       if (theme === 'auto') {
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+      } else {
+        document.documentElement.setAttribute('data-theme', theme);
       }
     } catch (error) {
       debugUtils.error('Failed to apply theme', 'SettingsPanel', error);
@@ -589,6 +714,12 @@ class SettingsPanel {
    * Show notification
    */
   showNotification(message, type = 'info') {
+    // Remove existing notifications
+    const existingNotifications = this.panelElement.querySelectorAll('.notification');
+    existingNotifications.forEach(notification => {
+      DOMUtils.removeElement(notification);
+    });
+
     // Create notification element
     const notification = DOMUtils.createElement('div', {
       classes: ['notification', `notification-${type}`],
@@ -613,9 +744,11 @@ class SettingsPanel {
 
     // Auto-hide after 3 seconds
     setTimeout(() => {
-      DOMUtils.fadeOut(notification, 200).then(() => {
-        DOMUtils.removeElement(notification);
-      });
+      if (notification.parentNode) {
+        DOMUtils.fadeOut(notification, 200).then(() => {
+          DOMUtils.removeElement(notification);
+        });
+      }
     }, 3000);
 
     // Animate in
@@ -635,14 +768,28 @@ class SettingsPanel {
    * Show the settings panel
    */
   show() {
-    this.panelElement.style.display = 'flex';
-    this.panelElement.classList.add('show');
-    this.isVisible = true;
-    
-    // Focus first input
-    const firstInput = this.panelElement.querySelector('input, select, button');
-    if (firstInput) {
-      setTimeout(() => firstInput.focus(), 100);
+    try {
+      debugUtils.info('Showing settings panel', 'SettingsPanel');
+      
+      this.panelElement.style.display = 'flex';
+      
+      // Force reflow before adding show class
+      this.panelElement.offsetHeight;
+      
+      this.panelElement.classList.add('show');
+      this.isVisible = true;
+      
+      // Focus first input
+      setTimeout(() => {
+        const firstInput = this.panelElement.querySelector('input, select, button');
+        if (firstInput) {
+          firstInput.focus();
+        }
+      }, 100);
+      
+      debugUtils.debug('Settings panel shown', 'SettingsPanel');
+    } catch (error) {
+      debugUtils.error('Failed to show settings panel', 'SettingsPanel', error);
     }
   }
 
@@ -650,11 +797,20 @@ class SettingsPanel {
    * Hide the settings panel
    */
   hide() {
-    this.panelElement.classList.remove('show');
-    setTimeout(() => {
-      this.panelElement.style.display = 'none';
-    }, 300);
-    this.isVisible = false;
+    try {
+      debugUtils.info('Hiding settings panel', 'SettingsPanel');
+      
+      this.panelElement.classList.remove('show');
+      this.isVisible = false;
+      
+      setTimeout(() => {
+        this.panelElement.style.display = 'none';
+      }, 300);
+      
+      debugUtils.debug('Settings panel hidden', 'SettingsPanel');
+    } catch (error) {
+      debugUtils.error('Failed to hide settings panel', 'SettingsPanel', error);
+    }
   }
 
   /**
@@ -676,7 +832,8 @@ class SettingsPanel {
       initialized: this.initialized,
       isVisible: this.isVisible,
       ruleCount: this.getRuleCount(),
-      settings: this.settings
+      settings: this.settings,
+      eventListenersCount: this.eventListeners.size
     };
   }
 
@@ -685,10 +842,18 @@ class SettingsPanel {
    */
   cleanup() {
     try {
+      // Hide panel
       this.hide();
       
+      // Clear event listeners
+      this.clearEventListeners();
+      
+      // Clear content
       if (this.panelElement) {
-        this.panelElement.innerHTML = '';
+        const settingsContent = this.panelElement.querySelector('.settings-content');
+        if (settingsContent) {
+          settingsContent.innerHTML = '';
+        }
       }
 
       debugUtils.info('SettingsPanel component cleanup completed', 'SettingsPanel');
