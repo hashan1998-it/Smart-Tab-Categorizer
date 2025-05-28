@@ -1,5 +1,5 @@
 /**
- * Standalone Popup Controller - No External Dependencies
+ * Standalone Popup Controller - FIXED Search Functionality
  * Self-contained popup functionality for Smart Tab Organizer
  */
 
@@ -40,10 +40,12 @@ class PopupController {
     this.initialized = false;
     this.isLoading = false;
     this.tabs = [];
+    this.filteredTabs = []; // FIXED: Track filtered tabs separately
     this.categories = {};
     this.elements = {};
     this.retryCount = 0;
     this.maxRetries = 3;
+    this.currentSearchQuery = ''; // FIXED: Track current search query
     
     console.log('PopupController: Starting initialization');
   }
@@ -128,7 +130,7 @@ class PopupController {
   }
 
   /**
-   * Setup event listeners
+   * Setup event listeners - FIXED
    */
   setupEventListeners() {
     // Refresh button
@@ -156,28 +158,56 @@ class PopupController {
       this.elements.retryBtn.addEventListener('click', () => this.handleRetry());
     }
 
-    // Search input
+    // FIXED: Search input with proper debouncing
     if (this.elements.searchInput) {
       let searchTimeout;
+      
       this.elements.searchInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+        
+        // Update search clear button visibility immediately
+        this.updateSearchClearButton(query);
+        
+        // Debounce the actual search
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
-          this.handleSearch(e.target.value);
+          this.handleSearch(query);
         }, 300);
+      });
+
+      // FIXED: Handle Enter key for immediate search
+      this.elements.searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          clearTimeout(searchTimeout);
+          const query = e.target.value.trim();
+          this.handleSearch(query);
+        }
       });
     }
 
-    // Search clear button
+    // FIXED: Search clear button
     if (this.elements.searchClear) {
       this.elements.searchClear.addEventListener('click', () => {
         if (this.elements.searchInput) {
           this.elements.searchInput.value = '';
+          this.currentSearchQuery = '';
+          this.updateSearchClearButton('');
           this.handleSearch('');
+          this.elements.searchInput.focus(); // Keep focus for better UX
         }
       });
     }
 
     console.log('Event listeners setup completed');
+  }
+
+  /**
+   * FIXED: Update search clear button visibility
+   */
+  updateSearchClearButton(query) {
+    if (this.elements.searchClear) {
+      this.elements.searchClear.style.display = query ? 'block' : 'none';
+    }
   }
 
   /**
@@ -240,6 +270,7 @@ class PopupController {
     }
     
     this.tabs = response.data.tabs || [];
+    this.filteredTabs = [...this.tabs]; // FIXED: Initialize filtered tabs
     this.categories = response.data.categories || {};
     this.updateTabCount(response.data.totalCount || 0);
   }
@@ -260,6 +291,8 @@ class PopupController {
       windowId: tab.windowId,
       category: this.categorizeTab(tab)
     }));
+
+    this.filteredTabs = [...this.tabs]; // FIXED: Initialize filtered tabs
 
     // Calculate categories
     this.categories = {};
@@ -328,6 +361,8 @@ class PopupController {
       }
     ];
 
+    this.filteredTabs = [...this.tabs]; // FIXED: Initialize filtered tabs
+
     this.categories = {
       development: 1,
       entertainment: 1,
@@ -395,7 +430,7 @@ class PopupController {
    */
   hideLoadingState() {
     this.isLoading = false;
-    if (this.tabs.length === 0) {
+    if (this.filteredTabs.length === 0 && this.tabs.length === 0) {
       this.showEmptyState();
     } else {
       this.showCategories();
@@ -455,32 +490,149 @@ class PopupController {
   }
 
   /**
-   * Render tabs
+   * FIXED: Handle search functionality
+   */
+  handleSearch(query) {
+    console.log('Searching for:', query);
+    
+    this.currentSearchQuery = query;
+    
+    if (!query || query.trim() === '') {
+      // Reset to show all tabs
+      this.filteredTabs = [...this.tabs];
+      console.log('Search cleared, showing all tabs');
+    } else {
+      // Filter tabs based on search query
+      const searchTerm = query.toLowerCase().trim();
+      
+      this.filteredTabs = this.tabs.filter(tab => {
+        const title = (tab.title || '').toLowerCase();
+        const url = (tab.url || '').toLowerCase();
+        
+        // Search in title and URL
+        return title.includes(searchTerm) || 
+               url.includes(searchTerm) ||
+               this.getDomainFromUrl(url).includes(searchTerm);
+      });
+      
+      console.log(`Found ${this.filteredTabs.length} tabs matching "${query}"`);
+    }
+
+    // Update the display
+    this.renderTabs();
+    
+    // Update tab count to reflect filtered results
+    this.updateTabCount(this.filteredTabs.length);
+    
+    // Show appropriate state based on results
+    if (this.filteredTabs.length === 0 && query) {
+      this.showNoResultsState(query);
+    } else if (this.filteredTabs.length === 0) {
+      this.showEmptyState();
+    } else {
+      this.showCategories();
+    }
+  }
+
+  /**
+   * FIXED: Extract domain from URL for better search
+   */
+  getDomainFromUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname.replace('www.', '');
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * FIXED: Show no search results state
+   */
+  showNoResultsState(query) {
+    if (!this.elements.categoriesContainer) return;
+    
+    this.elements.categoriesContainer.innerHTML = `
+      <div class="empty-state show" style="display: flex; position: relative; background: transparent;">
+        <span class="empty-icon" aria-hidden="true">🔍</span>
+        <h3>No Results Found</h3>
+        <p>No tabs match "${this.escapeHtml(query)}"</p>
+        <button class="btn btn-secondary" onclick="popupController.clearSearch()">Clear Search</button>
+      </div>
+    `;
+  }
+
+  /**
+   * FIXED: Clear search helper method
+   */
+  clearSearch() {
+    if (this.elements.searchInput) {
+      this.elements.searchInput.value = '';
+    }
+    this.handleSearch('');
+    this.updateSearchClearButton('');
+  }
+
+  /**
+   * FIXED: Render tabs using filtered tabs
    */
   renderTabs() {
     if (!this.elements.categoriesContainer) return;
 
-    console.log(`Rendering ${this.tabs.length} tabs`);
+    console.log(`Rendering ${this.filteredTabs.length} tabs (filtered from ${this.tabs.length})`);
     
     this.elements.categoriesContainer.innerHTML = '';
 
-    if (this.tabs.length === 0) {
-      this.showEmptyState();
+    if (this.filteredTabs.length === 0) {
+      if (this.currentSearchQuery) {
+        this.showNoResultsState(this.currentSearchQuery);
+      } else {
+        this.showEmptyState();
+      }
       return;
     }
 
-    // Group tabs by category
+    // Group filtered tabs by category
     const grouped = {};
-    this.tabs.forEach(tab => {
+    this.filteredTabs.forEach(tab => {
       const category = tab.category || 'other';
       if (!grouped[category]) grouped[category] = [];
       grouped[category].push(tab);
     });
 
+    // Sort categories by tab count (descending)
+    const sortedCategories = Object.entries(grouped)
+      .sort(([,a], [,b]) => b.length - a.length);
+
     // Render each category
-    Object.entries(grouped).forEach(([category, categoryTabs]) => {
+    sortedCategories.forEach(([category, categoryTabs]) => {
       this.renderCategory(category, categoryTabs);
     });
+
+    // Add search results summary if searching
+    if (this.currentSearchQuery) {
+      this.addSearchSummary();
+    }
+  }
+
+  /**
+   * FIXED: Add search results summary
+   */
+  addSearchSummary() {
+    if (!this.elements.categoriesContainer || !this.currentSearchQuery) return;
+    
+    const summaryDiv = document.createElement('div');
+    summaryDiv.className = 'search-summary';
+    summaryDiv.innerHTML = `
+      <div style="padding: 12px 16px; background: var(--surface); border-radius: 8px; margin-bottom: 12px; border: 1px solid var(--border);">
+        <div style="font-size: 13px; color: var(--text-secondary);">
+          Found <strong>${this.filteredTabs.length}</strong> tab${this.filteredTabs.length === 1 ? '' : 's'} 
+          matching "<strong>${this.escapeHtml(this.currentSearchQuery)}</strong>"
+        </div>
+      </div>
+    `;
+    
+    this.elements.categoriesContainer.insertBefore(summaryDiv, this.elements.categoriesContainer.firstChild);
   }
 
   /**
@@ -495,7 +647,7 @@ class PopupController {
     const categoryName = category.charAt(0).toUpperCase() + category.slice(1);
 
     categoryDiv.innerHTML = `
-      <div class="category-header">
+      <div class="category-header" onclick="this.parentElement.querySelector('.tab-list').classList.toggle('collapsed'); this.classList.toggle('collapsed');">
         <div class="category-info">
           <span class="category-icon category-${category}">${icon}</span>
           <span class="category-name">${categoryName}</span>
@@ -514,12 +666,31 @@ class PopupController {
   }
 
   /**
-   * Render a single tab
+   * FIXED: Render a single tab with improved search highlighting
    */
   renderTab(tab) {
     const faviconUrl = tab.favIconUrl || this.getFallbackFavicon(tab.url);
-    const title = this.escapeHtml(tab.title || 'Loading...');
-    const url = this.escapeHtml(this.formatUrl(tab.url));
+    let title = this.escapeHtml(tab.title || 'Loading...');
+    let url = this.escapeHtml(this.formatUrl(tab.url));
+
+    // FIXED: Highlight search terms
+    if (this.currentSearchQuery) {
+      const query = this.currentSearchQuery.toLowerCase();
+      const titleLower = title.toLowerCase();
+      const urlLower = url.toLowerCase();
+      
+      // Highlight in title
+      if (titleLower.includes(query)) {
+        const regex = new RegExp(`(${this.escapeRegex(query)})`, 'gi');
+        title = title.replace(regex, '<mark style="background: #fef08a; padding: 0 2px; border-radius: 2px;">$1</mark>');
+      }
+      
+      // Highlight in URL
+      if (urlLower.includes(query)) {
+        const regex = new RegExp(`(${this.escapeRegex(query)})`, 'gi');
+        url = url.replace(regex, '<mark style="background: #fef08a; padding: 0 2px; border-radius: 2px;">$1</mark>');
+      }
+    }
 
     return `
       <div class="tab-item" data-tab-id="${tab.id}">
@@ -545,6 +716,13 @@ class PopupController {
         </div>
       </div>
     `;
+  }
+
+  /**
+   * FIXED: Escape regex special characters
+   */
+  escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**
@@ -587,46 +765,29 @@ class PopupController {
   }
 
   /**
-   * Handle search
-   */
-  handleSearch(query) {
-    if (!query.trim()) {
-      this.renderTabs();
-      return;
-    }
-
-    const filteredTabs = this.tabs.filter(tab => {
-      const title = tab.title.toLowerCase();
-      const url = tab.url.toLowerCase();
-      const searchQuery = query.toLowerCase();
-      return title.includes(searchQuery) || url.includes(searchQuery);
-    });
-
-    // Temporarily replace tabs for rendering
-    const originalTabs = this.tabs;
-    this.tabs = filteredTabs;
-    this.renderTabs();
-    this.tabs = originalTabs;
-
-    // Update search clear button
-    if (this.elements.searchClear) {
-      this.elements.searchClear.style.display = query ? 'block' : 'none';
-    }
-  }
-
-  /**
-   * Handle refresh
+   * FIXED: Handle refresh - preserve search state
    */
   async handleRefresh() {
     if (this.isLoading) return;
 
     console.log('Refreshing tabs...');
     
+    const currentQuery = this.currentSearchQuery; // Preserve search query
     this.showLoadingState();
     
     try {
       await this.loadInitialData();
-      this.renderTabs();
+      
+      // Reapply search if there was one
+      if (currentQuery) {
+        this.currentSearchQuery = currentQuery;
+        if (this.elements.searchInput) {
+          this.elements.searchInput.value = currentQuery;
+        }
+        this.handleSearch(currentQuery);
+      } else {
+        this.renderTabs();
+      }
     } catch (error) {
       console.error('Refresh failed:', error);
       this.showErrorState('Failed to refresh tabs');
@@ -671,14 +832,17 @@ class PopupController {
   }
 
   /**
-   * Close a tab
+   * FIXED: Close a tab - update both original and filtered arrays
    */
   async closeTab(tabId) {
     try {
       await chrome.tabs.remove(tabId);
-      // Remove from local tabs array
+      
+      // Remove from both arrays
       this.tabs = this.tabs.filter(tab => tab.id !== tabId);
-      this.updateTabCount(this.tabs.length);
+      this.filteredTabs = this.filteredTabs.filter(tab => tab.id !== tabId);
+      
+      this.updateTabCount(this.filteredTabs.length);
       this.renderTabs();
     } catch (error) {
       console.error(`Failed to close tab ${tabId}:`, error);
