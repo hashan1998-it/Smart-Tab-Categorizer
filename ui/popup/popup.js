@@ -92,6 +92,18 @@ class NotificationManager {
     const id = this.generateId();
     const notificationDuration = duration || this.defaultDuration;
 
+    // Check for duplicate messages within 1 second
+    const recentDuplicate = Array.from(this.notifications.values()).find(notification => 
+      notification.message === message && 
+      notification.type === type && 
+      (Date.now() - notification.createdAt) < 1000
+    );
+
+    if (recentDuplicate) {
+      console.log('Preventing duplicate notification:', message);
+      return recentDuplicate.element.dataset.id;
+    }
+
     if (this.notifications.size >= this.maxNotifications) {
       const oldestId = this.notifications.keys().next().value;
       this.hide(oldestId);
@@ -126,11 +138,34 @@ class NotificationManager {
     notification.className = `notification notification-${type}`;
     notification.dataset.id = id;
     notification.style.cssText = `
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md, 8px);
+      box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1));
+      padding: var(--spacing-md, 12px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--spacing-sm, 8px);
       opacity: 0;
       transform: translateY(-20px);
       transition: all 0.3s ease;
       pointer-events: auto;
+      color: var(--text-primary);
+      font-size: var(--font-size-sm, 13px);
     `;
+
+    // Add type-specific styling
+    const typeStyles = {
+      success: 'border-color: var(--success-color, #10b981); background: var(--success-bg, #f0fdf4);',
+      error: 'border-color: var(--error-color, #ef4444); background: var(--error-bg, #fef2f2);',
+      warning: 'border-color: var(--warning-color, #f59e0b); background: var(--warning-bg, #fefce8);',
+      info: 'border-color: var(--primary-color, #3b82f6); background: var(--info-bg, #dbeafe);'
+    };
+
+    if (typeStyles[type]) {
+      notification.style.cssText += typeStyles[type];
+    }
 
     const icon = this.getIcon(type);
     
@@ -141,15 +176,43 @@ class NotificationManager {
     const messageSpan = document.createElement('span');
     messageSpan.className = 'notification-message';
     messageSpan.textContent = message;
+    messageSpan.style.cssText = 'color: var(--text-primary); flex: 1; margin-left: 8px;';
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'notification-close';
     closeBtn.title = 'Close';
     closeBtn.textContent = '×';
+    closeBtn.style.cssText = `
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: var(--font-size-lg, 16px);
+      padding: 0;
+      margin-left: var(--spacing-sm, 8px);
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-sm, 4px);
+      transition: all var(--transition-normal, 0.3s ease);
+    `;
+    
+    closeBtn.addEventListener('mouseenter', () => {
+      closeBtn.style.color = 'var(--text-primary)';
+      closeBtn.style.background = 'rgba(0, 0, 0, 0.1)';
+    });
+    
+    closeBtn.addEventListener('mouseleave', () => {
+      closeBtn.style.color = 'var(--text-secondary)';
+      closeBtn.style.background = 'none';
+    });
+    
     closeBtn.addEventListener('click', () => this.hide(id));
 
     const contentDiv = document.createElement('div');
-    contentDiv.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+    contentDiv.style.cssText = 'display: flex; align-items: center; flex: 1;';
     contentDiv.appendChild(iconSpan);
     contentDiv.appendChild(messageSpan);
 
@@ -269,6 +332,12 @@ class SettingsManager {
   }
 
   setupEventListeners() {
+    // Prevent duplicate event listeners
+    if (this.eventListenersSetup) {
+      return;
+    }
+    this.eventListenersSetup = true;
+
     // General Settings
     if (this.elements.autoOrganize) {
       this.elements.autoOrganize.addEventListener('change', (e) => {
@@ -418,8 +487,9 @@ class SettingsManager {
       this.settings[key] = value;
       await this.saveSettings();
       
-      if (this.notificationManager) {
-        this.notificationManager.show(`Setting updated: ${key}`, 'success');
+      // Only show notification for user-initiated changes, not programmatic ones
+      if (this.notificationManager && this.initialized) {
+        this.notificationManager.show(`Setting updated`, 'success');
       }
     } catch (error) {
       console.error(`Failed to update setting ${key}:`, error);
@@ -491,6 +561,7 @@ class SettingsManager {
 
       this.renderCustomRules();
 
+      // Only show ONE notification here
       if (this.notificationManager) {
         this.notificationManager.show(`Added ${type} rule for ${category}`, 'success');
       }
@@ -524,6 +595,7 @@ class SettingsManager {
         await this.saveCustomRules();
         this.renderCustomRules();
 
+        // Only show ONE notification here
         if (this.notificationManager) {
           this.notificationManager.show(`Removed ${type} rule`, 'success');
         }
@@ -639,6 +711,7 @@ class SettingsManager {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
+      // Only show ONE notification
       if (this.notificationManager) {
         this.notificationManager.show('Data exported successfully', 'success');
       }
@@ -690,6 +763,7 @@ class SettingsManager {
         await chrome.storage.local.set({ tabs: importData.tabs });
       }
 
+      // Only show ONE notification
       if (this.notificationManager) {
         this.notificationManager.show('Data imported successfully', 'success');
       }
@@ -740,8 +814,9 @@ class SettingsManager {
       this.populateSettingsUI();
       this.renderCustomRules();
 
+      // Only show ONE notification
       if (this.notificationManager) {
-        this.notificationManager.show('All data cleared successfully', 'success');
+        this.notificationManager.show('All data cleared', 'success');
       }
       
     } catch (error) {
@@ -882,6 +957,12 @@ class PopupController {
   }
 
   setupEventListeners() {
+    // Prevent duplicate event listeners
+    if (this.eventListenersSetup) {
+      return;
+    }
+    this.eventListenersSetup = true;
+
     const handlers = new Map();
 
     if (this.elements.refreshBtn) {
@@ -913,7 +994,7 @@ class PopupController {
     }
 
     const escapeHandler = (e) => {
-      if (e.key === 'Escape' && this.elements.settingsPanel.classList.contains('show')) {
+      if (e.key === 'Escape' && this.elements.settingsPanel && this.elements.settingsPanel.classList.contains('show')) {
         this.closeSettings();
       }
     };
@@ -974,9 +1055,13 @@ class PopupController {
       handlers.set('searchClear', { element: this.elements.searchClear, event: 'click', handler: clearHandler });
     }
 
-    const keyboardHandler = (e) => this.handleKeyboardShortcuts(e);
-    document.addEventListener('keydown', keyboardHandler);
-    handlers.set('keyboard', { element: document, event: 'keydown', handler: keyboardHandler });
+    // Only add keyboard handler once
+    if (!this.keyboardHandlerAdded) {
+      const keyboardHandler = (e) => this.handleKeyboardShortcuts(e);
+      document.addEventListener('keydown', keyboardHandler);
+      handlers.set('keyboard', { element: document, event: 'keydown', handler: keyboardHandler });
+      this.keyboardHandlerAdded = true;
+    }
 
     this.eventHandlers = handlers;
     console.log('Event listeners setup completed');
@@ -1536,11 +1621,16 @@ class PopupController {
         this.renderTabs();
       }
 
-      this.notificationManager.success('Tabs refreshed successfully');
+      // Only show success notification, avoid duplicates
+      if (this.notificationManager && this.initialized) {
+        this.notificationManager.success('Tabs refreshed');
+      }
     } catch (error) {
       console.error('Refresh failed:', error);
       this.showErrorState('Failed to refresh tabs');
-      this.notificationManager.error('Failed to refresh tabs');
+      if (this.notificationManager) {
+        this.notificationManager.error('Failed to refresh tabs');
+      }
     } finally {
       this.hideLoadingState();
     }
@@ -1568,11 +1658,16 @@ class PopupController {
       const tab = await chrome.tabs.get(tabId);
       await chrome.windows.update(tab.windowId, { focused: true });
       
-      this.notificationManager.success('Tab focused');
+      // Only show ONE notification, and make it brief
+      if (this.notificationManager && this.initialized) {
+        this.notificationManager.show('Tab focused', 'success', 1500); // Shorter duration
+      }
       setTimeout(() => window.close(), 500);
     } catch (error) {
       console.error(`Failed to focus tab ${tabId}:`, error);
-      this.notificationManager.error('Failed to focus tab');
+      if (this.notificationManager) {
+        this.notificationManager.error('Failed to focus tab');
+      }
     }
   }
 
@@ -1588,10 +1683,15 @@ class PopupController {
       this.updateTabCount(this.filteredTabs.length);
       this.renderTabs();
       
-      this.notificationManager.success(`Closed "${tab?.title || 'tab'}"`);
+      // Only show ONE notification with shorter text
+      if (this.notificationManager && this.initialized) {
+        this.notificationManager.show('Tab closed', 'success', 1500);
+      }
     } catch (error) {
       console.error(`Failed to close tab ${tabId}:`, error);
-      this.notificationManager.error('Failed to close tab');
+      if (this.notificationManager) {
+        this.notificationManager.error('Failed to close tab');
+      }
     }
   }
 
