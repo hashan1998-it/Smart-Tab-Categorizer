@@ -1,9 +1,9 @@
 /**
- * Standalone Popup Controller - FIXED Search Functionality
- * Self-contained popup functionality for Smart Tab Organizer
+ * Complete Popup Controller - Fixed All Errors
+ * CSP compliant with proper error handling
  */
 
-// Constants
+// Constants (inline since we can't import from shared in popup context)
 const MESSAGE_TYPES = {
   PING: 'ping',
   GET_ALL_TABS: 'getAllTabs',
@@ -35,41 +35,800 @@ const CATEGORY_ICONS = {
   other: '📁'
 };
 
+const DEFAULT_SETTINGS = {
+  autoOrganize: true,
+  showNotifications: true,
+  theme: 'light',
+  categorization: 'auto'
+};
+
+// Notification Manager Class (inline to avoid import issues)
+class NotificationManager {
+  constructor() {
+    this.container = null;
+    this.notifications = new Map();
+    this.defaultDuration = 4000;
+    this.maxNotifications = 5;
+    this.initialized = false;
+  }
+
+  init() {
+    try {
+      this.setupContainer();
+      this.initialized = true;
+      console.log('NotificationManager initialized');
+    } catch (error) {
+      console.error('Failed to initialize NotificationManager:', error);
+    }
+  }
+
+  setupContainer() {
+    this.container = document.querySelector('#notificationContainer');
+    
+    if (!this.container) {
+      this.container = document.createElement('div');
+      this.container.id = 'notificationContainer';
+      this.container.style.cssText = `
+        position: fixed;
+        top: 80px;
+        left: 16px;
+        right: 16px;
+        z-index: 1000;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      `;
+      document.body.appendChild(this.container);
+    }
+  }
+
+  show(message, type = 'info', duration = null) {
+    if (!this.initialized) {
+      console.warn('NotificationManager not initialized');
+      return null;
+    }
+
+    const id = this.generateId();
+    const notificationDuration = duration || this.defaultDuration;
+
+    if (this.notifications.size >= this.maxNotifications) {
+      const oldestId = this.notifications.keys().next().value;
+      this.hide(oldestId);
+    }
+
+    const notification = this.createNotificationElement(id, message, type);
+    this.container.appendChild(notification);
+
+    this.notifications.set(id, {
+      element: notification,
+      type,
+      message,
+      createdAt: Date.now()
+    });
+
+    requestAnimationFrame(() => {
+      notification.style.opacity = '1';
+      notification.style.transform = 'translateY(0)';
+    });
+
+    if (notificationDuration > 0) {
+      setTimeout(() => {
+        this.hide(id);
+      }, notificationDuration);
+    }
+
+    return id;
+  }
+
+  createNotificationElement(id, message, type) {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.dataset.id = id;
+    notification.style.cssText = `
+      opacity: 0;
+      transform: translateY(-20px);
+      transition: all 0.3s ease;
+      pointer-events: auto;
+    `;
+
+    const icon = this.getIcon(type);
+    
+    const iconSpan = document.createElement('span');
+    iconSpan.style.fontSize = '16px';
+    iconSpan.textContent = icon;
+
+    const messageSpan = document.createElement('span');
+    messageSpan.className = 'notification-message';
+    messageSpan.textContent = message;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'notification-close';
+    closeBtn.title = 'Close';
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => this.hide(id));
+
+    const contentDiv = document.createElement('div');
+    contentDiv.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+    contentDiv.appendChild(iconSpan);
+    contentDiv.appendChild(messageSpan);
+
+    notification.appendChild(contentDiv);
+    notification.appendChild(closeBtn);
+
+    return notification;
+  }
+
+  getIcon(type) {
+    const icons = {
+      success: '✅',
+      error: '❌',
+      warning: '⚠️',
+      info: 'ℹ️'
+    };
+    return icons[type] || icons.info;
+  }
+
+  hide(id) {
+    const notification = this.notifications.get(id);
+    if (!notification) return;
+
+    const element = notification.element;
+    element.style.opacity = '0';
+    element.style.transform = 'translateY(-20px)';
+    
+    setTimeout(() => {
+      if (element.parentNode) {
+        element.parentNode.removeChild(element);
+      }
+      this.notifications.delete(id);
+    }, 300);
+  }
+
+  success(message, duration = null) {
+    return this.show(message, 'success', duration);
+  }
+
+  error(message, duration = null) {
+    return this.show(message, 'error', duration || 6000);
+  }
+
+  warning(message, duration = null) {
+    return this.show(message, 'warning', duration);
+  }
+
+  info(message, duration = null) {
+    return this.show(message, 'info', duration);
+  }
+
+  generateId() {
+    return 'notification_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  }
+
+  destroy() {
+    this.notifications.forEach((_, id) => this.hide(id));
+    if (this.container && this.container.parentNode) {
+      this.container.parentNode.removeChild(this.container);
+    }
+    this.notifications.clear();
+    this.initialized = false;
+  }
+}
+
+// Settings Manager Class (inline to avoid import issues)
+class SettingsManager {
+  constructor() {
+    this.settings = { ...DEFAULT_SETTINGS };
+    this.customRules = {};
+    this.elements = {};
+    this.initialized = false;
+    this.notificationManager = null;
+  }
+
+  async init(notificationManager = null) {
+    try {
+      console.log('Initializing SettingsManager');
+      
+      this.notificationManager = notificationManager;
+      this.setupDOMElements();
+      this.setupEventListeners();
+      
+      await this.loadSettings();
+      await this.loadCustomRules();
+      
+      this.populateSettingsUI();
+      this.renderCustomRules();
+      
+      this.initialized = true;
+      console.log('SettingsManager initialized successfully');
+      
+    } catch (error) {
+      console.error('Failed to initialize SettingsManager:', error);
+      // Don't throw - allow popup to work without settings
+    }
+  }
+
+  setupDOMElements() {
+    this.elements = {
+      autoOrganize: document.querySelector('#autoOrganize'),
+      showNotifications: document.querySelector('#showNotifications'),
+      themeSelect: document.querySelector('#themeSelect'),
+      categorizationMode: document.querySelector('#categorizationMode'),
+      ruleCategorySelect: document.querySelector('#ruleCategorySelect'),
+      ruleValueInput: document.querySelector('#ruleValueInput'),
+      addRuleBtn: document.querySelector('#addRuleBtn'),
+      customRulesList: document.querySelector('#customRulesList'),
+      ruleCount: document.querySelector('#ruleCount'),
+      exportDataBtn: document.querySelector('#exportDataBtn'),
+      importDataBtn: document.querySelector('#importDataBtn'),
+      clearDataBtn: document.querySelector('#clearDataBtn'),
+      importFileInput: document.querySelector('#importFileInput'),
+      feedbackBtn: document.querySelector('#feedbackBtn'),
+      helpBtn: document.querySelector('#helpBtn')
+    };
+  }
+
+  setupEventListeners() {
+    // General Settings
+    if (this.elements.autoOrganize) {
+      this.elements.autoOrganize.addEventListener('change', (e) => {
+        this.updateSetting('autoOrganize', e.target.checked);
+      });
+    }
+
+    if (this.elements.showNotifications) {
+      this.elements.showNotifications.addEventListener('change', (e) => {
+        this.updateSetting('showNotifications', e.target.checked);
+      });
+    }
+
+    if (this.elements.themeSelect) {
+      this.elements.themeSelect.addEventListener('change', (e) => {
+        this.updateSetting('theme', e.target.value);
+        this.applyTheme(e.target.value);
+      });
+    }
+
+    if (this.elements.categorizationMode) {
+      this.elements.categorizationMode.addEventListener('change', (e) => {
+        this.updateSetting('categorization', e.target.value);
+      });
+    }
+
+    // Custom Rules
+    if (this.elements.addRuleBtn) {
+      this.elements.addRuleBtn.addEventListener('click', () => {
+        this.handleAddRule();
+      });
+    }
+
+    if (this.elements.ruleValueInput) {
+      this.elements.ruleValueInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          this.handleAddRule();
+        }
+      });
+    }
+
+    // Data Management
+    if (this.elements.exportDataBtn) {
+      this.elements.exportDataBtn.addEventListener('click', () => {
+        this.handleExportData();
+      });
+    }
+
+    if (this.elements.importDataBtn) {
+      this.elements.importDataBtn.addEventListener('click', () => {
+        if (this.elements.importFileInput) {
+          this.elements.importFileInput.click();
+        }
+      });
+    }
+
+    if (this.elements.importFileInput) {
+      this.elements.importFileInput.addEventListener('change', (e) => {
+        this.handleImportData(e);
+      });
+    }
+
+    if (this.elements.clearDataBtn) {
+      this.elements.clearDataBtn.addEventListener('click', () => {
+        this.handleClearData();
+      });
+    }
+
+    // About
+    if (this.elements.feedbackBtn) {
+      this.elements.feedbackBtn.addEventListener('click', () => {
+        this.handleFeedback();
+      });
+    }
+
+    if (this.elements.helpBtn) {
+      this.elements.helpBtn.addEventListener('click', () => {
+        this.handleHelp();
+      });
+    }
+  }
+
+  async loadSettings() {
+    try {
+      const result = await chrome.storage.local.get(['settings']);
+      if (result.settings) {
+        this.settings = { ...DEFAULT_SETTINGS, ...result.settings };
+      }
+    } catch (error) {
+      console.warn('Failed to load settings:', error);
+      this.settings = { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  async loadCustomRules() {
+    try {
+      const result = await chrome.storage.local.get(['categoryRules']);
+      if (result.categoryRules) {
+        this.customRules = result.categoryRules;
+      }
+    } catch (error) {
+      console.warn('Failed to load custom rules:', error);
+      this.customRules = {};
+    }
+  }
+
+  async saveSettings() {
+    try {
+      await chrome.storage.local.set({ settings: this.settings });
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      throw error;
+    }
+  }
+
+  async saveCustomRules() {
+    try {
+      await chrome.storage.local.set({ categoryRules: this.customRules });
+    } catch (error) {
+      console.error('Failed to save custom rules:', error);
+      throw error;
+    }
+  }
+
+  populateSettingsUI() {
+    if (this.elements.autoOrganize) {
+      this.elements.autoOrganize.checked = this.settings.autoOrganize;
+    }
+
+    if (this.elements.showNotifications) {
+      this.elements.showNotifications.checked = this.settings.showNotifications;
+    }
+
+    if (this.elements.themeSelect) {
+      this.elements.themeSelect.value = this.settings.theme;
+    }
+
+    if (this.elements.categorizationMode) {
+      this.elements.categorizationMode.value = this.settings.categorization;
+    }
+
+    this.applyTheme(this.settings.theme);
+  }
+
+  async updateSetting(key, value) {
+    try {
+      this.settings[key] = value;
+      await this.saveSettings();
+      
+      if (this.notificationManager) {
+        this.notificationManager.show(`Setting updated: ${key}`, 'success');
+      }
+    } catch (error) {
+      console.error(`Failed to update setting ${key}:`, error);
+      
+      if (this.notificationManager) {
+        this.notificationManager.show('Failed to save setting', 'error');
+      }
+    }
+  }
+
+  applyTheme(theme) {
+    const root = document.documentElement;
+    
+    if (theme === 'dark') {
+      root.setAttribute('data-theme', 'dark');
+    } else if (theme === 'light') {
+      root.removeAttribute('data-theme');
+    } else if (theme === 'auto') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (prefersDark) {
+        root.setAttribute('data-theme', 'dark');
+      } else {
+        root.removeAttribute('data-theme');
+      }
+    }
+  }
+
+  async handleAddRule() {
+    const category = this.elements.ruleCategorySelect?.value;
+    const value = this.elements.ruleValueInput?.value?.trim();
+
+    if (!category || !value) {
+      if (this.notificationManager) {
+        this.notificationManager.show('Please select a category and enter a value', 'warning');
+      }
+      return;
+    }
+
+    if (value.length > 100) {
+      if (this.notificationManager) {
+        this.notificationManager.show('Rule value is too long (max 100 characters)', 'error');
+      }
+      return;
+    }
+
+    const type = value.includes('.') ? 'domain' : 'keyword';
+    
+    try {
+      if (!this.customRules[category]) {
+        this.customRules[category] = { domains: [], keywords: [] };
+      }
+
+      const ruleArray = type === 'domain' ? 'domains' : 'keywords';
+      const existing = this.customRules[category][ruleArray] || [];
+      
+      if (existing.includes(value.toLowerCase())) {
+        if (this.notificationManager) {
+          this.notificationManager.show('Rule already exists', 'warning');
+        }
+        return;
+      }
+
+      this.customRules[category][ruleArray].push(value.toLowerCase());
+      await this.saveCustomRules();
+
+      if (this.elements.ruleValueInput) {
+        this.elements.ruleValueInput.value = '';
+      }
+
+      this.renderCustomRules();
+
+      if (this.notificationManager) {
+        this.notificationManager.show(`Added ${type} rule for ${category}`, 'success');
+      }
+      
+    } catch (error) {
+      console.error('Failed to add custom rule:', error);
+      
+      if (this.notificationManager) {
+        this.notificationManager.show('Failed to add rule', 'error');
+      }
+    }
+  }
+
+  async removeCustomRule(category, value, type) {
+    try {
+      if (!this.customRules[category]) return;
+
+      const ruleArray = type === 'domain' ? 'domains' : 'keywords';
+      const rules = this.customRules[category][ruleArray];
+      const index = rules.indexOf(value);
+
+      if (index > -1) {
+        rules.splice(index, 1);
+
+        if (rules.length === 0 && 
+            this.customRules[category].domains.length === 0 && 
+            this.customRules[category].keywords.length === 0) {
+          delete this.customRules[category];
+        }
+
+        await this.saveCustomRules();
+        this.renderCustomRules();
+
+        if (this.notificationManager) {
+          this.notificationManager.show(`Removed ${type} rule`, 'success');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to remove custom rule:', error);
+      
+      if (this.notificationManager) {
+        this.notificationManager.show('Failed to remove rule', 'error');
+      }
+    }
+  }
+
+  renderCustomRules() {
+    if (!this.elements.customRulesList) return;
+
+    const rules = [];
+    
+    Object.entries(this.customRules).forEach(([category, categoryRules]) => {
+      (categoryRules.domains || []).forEach(domain => {
+        rules.push({ category, value: domain, type: 'domain' });
+      });
+      (categoryRules.keywords || []).forEach(keyword => {
+        rules.push({ category, value: keyword, type: 'keyword' });
+      });
+    });
+
+    rules.sort((a, b) => {
+      if (a.category !== b.category) {
+        return a.category.localeCompare(b.category);
+      }
+      return a.value.localeCompare(b.value);
+    });
+
+    if (rules.length === 0) {
+      this.elements.customRulesList.innerHTML = `
+        <div class="no-rules-message" style="padding: var(--spacing-lg); text-align: center; color: var(--text-secondary);">
+          <p>No custom rules yet. Add some rules to improve categorization!</p>
+        </div>
+      `;
+    } else {
+      this.elements.customRulesList.innerHTML = '';
+      
+      rules.forEach(rule => {
+        const ruleDiv = document.createElement('div');
+        ruleDiv.className = 'custom-rule';
+        
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'rule-info';
+        
+        const categorySpan = document.createElement('span');
+        categorySpan.className = 'rule-category';
+        categorySpan.textContent = this.capitalizeFirst(rule.category);
+        
+        const typeSpan = document.createElement('span');
+        typeSpan.className = 'rule-type';
+        typeSpan.textContent = rule.type;
+        
+        const valueSpan = document.createElement('span');
+        valueSpan.className = 'rule-value';
+        valueSpan.textContent = rule.value;
+        
+        infoDiv.appendChild(categorySpan);
+        infoDiv.appendChild(typeSpan);
+        infoDiv.appendChild(valueSpan);
+        
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'rule-remove';
+        removeBtn.title = 'Remove rule';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', () => {
+          this.removeCustomRule(rule.category, rule.value, rule.type);
+        });
+        
+        ruleDiv.appendChild(infoDiv);
+        ruleDiv.appendChild(removeBtn);
+        
+        this.elements.customRulesList.appendChild(ruleDiv);
+      });
+    }
+
+    if (this.elements.ruleCount) {
+      this.elements.ruleCount.textContent = rules.length;
+    }
+  }
+
+  async handleExportData() {
+    try {
+      const data = await chrome.storage.local.get();
+      
+      const exportData = {
+        version: '1.0.0',
+        exportDate: new Date().toISOString(),
+        settings: this.settings,
+        customRules: this.customRules,
+        tabs: data.tabs || {},
+        metadata: {
+          userAgent: navigator.userAgent,
+          extensionVersion: chrome.runtime.getManifest().version
+        }
+      };
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { 
+        type: 'application/json' 
+      });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `smart-tab-organizer-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      if (this.notificationManager) {
+        this.notificationManager.show('Data exported successfully', 'success');
+      }
+      
+    } catch (error) {
+      console.error('Failed to export data:', error);
+      
+      if (this.notificationManager) {
+        this.notificationManager.show('Failed to export data', 'error');
+      }
+    }
+  }
+
+  async handleImportData(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    try {
+      const text = await this.readFile(file);
+      const importData = JSON.parse(text);
+
+      if (!importData.version || !importData.settings) {
+        throw new Error('Invalid backup file format');
+      }
+
+      const confirmed = confirm(
+        'This will replace your current settings and custom rules. ' +
+        'Make sure you have exported your current data first. Continue?'
+      );
+      
+      if (!confirmed) {
+        event.target.value = '';
+        return;
+      }
+
+      if (importData.settings) {
+        this.settings = { ...DEFAULT_SETTINGS, ...importData.settings };
+        await this.saveSettings();
+        this.populateSettingsUI();
+      }
+
+      if (importData.customRules) {
+        this.customRules = importData.customRules;
+        await this.saveCustomRules();
+        this.renderCustomRules();
+      }
+
+      if (importData.tabs) {
+        await chrome.storage.local.set({ tabs: importData.tabs });
+      }
+
+      if (this.notificationManager) {
+        this.notificationManager.show('Data imported successfully', 'success');
+      }
+      
+    } catch (error) {
+      console.error('Failed to import data:', error);
+      
+      if (this.notificationManager) {
+        this.notificationManager.show('Failed to import data: ' + error.message, 'error');
+      }
+    } finally {
+      event.target.value = '';
+    }
+  }
+
+  readFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(file);
+    });
+  }
+
+  async handleClearData() {
+    const confirmed = confirm(
+      'This will permanently delete ALL extension data including:\n' +
+      '• All settings\n' +
+      '• Custom categorization rules\n' +
+      '• Tab history and statistics\n\n' +
+      'This action cannot be undone. Are you sure?'
+    );
+
+    if (!confirmed) return;
+
+    const doubleConfirmed = confirm(
+      'Are you ABSOLUTELY sure? This will delete everything and cannot be undone.'
+    );
+
+    if (!doubleConfirmed) return;
+
+    try {
+      await chrome.storage.local.clear();
+      
+      this.settings = { ...DEFAULT_SETTINGS };
+      this.customRules = {};
+      
+      this.populateSettingsUI();
+      this.renderCustomRules();
+
+      if (this.notificationManager) {
+        this.notificationManager.show('All data cleared successfully', 'success');
+      }
+      
+    } catch (error) {
+      console.error('Failed to clear data:', error);
+      
+      if (this.notificationManager) {
+        this.notificationManager.show('Failed to clear data', 'error');
+      }
+    }
+  }
+
+  handleFeedback() {
+    const subject = encodeURIComponent('Smart Tab Organizer Feedback');
+    const body = encodeURIComponent(
+      'Hi there!\n\n' +
+      'I\'d like to share some feedback about Smart Tab Organizer:\n\n' +
+      '[Please describe your feedback here]\n\n' +
+      '---\n' +
+      `Extension Version: ${chrome.runtime.getManifest().version}\n` +
+      `Browser: ${navigator.userAgent}\n` +
+      `Date: ${new Date().toISOString()}`
+    );
+    
+    window.open(`mailto:feedback@example.com?subject=${subject}&body=${body}`);
+  }
+
+  handleHelp() {
+    alert(
+      'Smart Tab Organizer Help\n\n' +
+      '• The extension automatically categorizes your tabs\n' +
+      '• Use custom rules to improve categorization\n' +
+      '• Search tabs using the search bar\n' +
+      '• Export/import your settings for backup\n' +
+      '• Visit the Chrome Web Store page for more detailed documentation'
+    );
+  }
+
+  getSettings() {
+    return { ...this.settings };
+  }
+
+  getCustomRules() {
+    return { ...this.customRules };
+  }
+
+  capitalizeFirst(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  cleanup() {
+    console.log('SettingsManager cleanup completed');
+  }
+}
+
+// Main Popup Controller
 class PopupController {
   constructor() {
     this.initialized = false;
     this.isLoading = false;
     this.tabs = [];
-    this.filteredTabs = []; // FIXED: Track filtered tabs separately
+    this.filteredTabs = [];
     this.categories = {};
     this.elements = {};
     this.retryCount = 0;
     this.maxRetries = 3;
-    this.currentSearchQuery = ''; // FIXED: Track current search query
+    this.currentSearchQuery = '';
+    this.eventHandlers = new Map();
+    
+    this.notificationManager = new NotificationManager();
+    this.settingsManager = new SettingsManager();
     
     console.log('PopupController: Starting initialization');
   }
 
-  /**
-   * Initialize the popup controller
-   */
   async init() {
     try {
       console.log('Initializing PopupController');
       
-      // Wait for DOM to be ready
       await this.waitForDOM();
       
-      // Setup DOM elements
+      this.notificationManager.init();
+      await this.settingsManager.init(this.notificationManager);
+      
       this.setupDOMElements();
-      
-      // Show loading state
       this.showLoadingState();
-      
-      // Setup event listeners
       this.setupEventListeners();
       
-      // Load initial data
       await this.loadInitialData();
       
       this.initialized = true;
@@ -83,9 +842,6 @@ class PopupController {
     }
   }
 
-  /**
-   * Wait for DOM to be ready
-   */
   waitForDOM() {
     return new Promise((resolve) => {
       if (document.readyState === 'loading') {
@@ -96,9 +852,6 @@ class PopupController {
     });
   }
 
-  /**
-   * Setup DOM element references
-   */
   setupDOMElements() {
     this.elements = {
       container: document.querySelector('.container'),
@@ -118,7 +871,6 @@ class PopupController {
       closeSettingsBtn: document.querySelector('#closeSettingsBtn')
     };
 
-    // Validate required elements
     const required = ['container', 'categoriesContainer', 'loadingState'];
     const missing = required.filter(key => !this.elements[key]);
     
@@ -129,93 +881,135 @@ class PopupController {
     console.log('DOM elements setup completed');
   }
 
-  /**
-   * Setup event listeners - FIXED
-   */
   setupEventListeners() {
-    // Refresh button
+    const handlers = new Map();
+
     if (this.elements.refreshBtn) {
-      this.elements.refreshBtn.addEventListener('click', () => this.handleRefresh());
+      const refreshHandler = () => this.handleRefresh();
+      this.elements.refreshBtn.addEventListener('click', refreshHandler);
+      handlers.set('refreshBtn', { element: this.elements.refreshBtn, event: 'click', handler: refreshHandler });
     }
 
-    // Settings button
     if (this.elements.settingsBtn) {
-      this.elements.settingsBtn.addEventListener('click', () => this.openSettings());
+      const settingsHandler = () => this.openSettings();
+      this.elements.settingsBtn.addEventListener('click', settingsHandler);
+      handlers.set('settingsBtn', { element: this.elements.settingsBtn, event: 'click', handler: settingsHandler });
     }
 
-    // Close settings button
     if (this.elements.closeSettingsBtn) {
-      this.elements.closeSettingsBtn.addEventListener('click', () => this.closeSettings());
+      const closeSettingsHandler = () => this.closeSettings();
+      this.elements.closeSettingsBtn.addEventListener('click', closeSettingsHandler);
+      handlers.set('closeSettingsBtn', { element: this.elements.closeSettingsBtn, event: 'click', handler: closeSettingsHandler });
     }
 
-    // New tab button
+    if (this.elements.settingsPanel) {
+      const backdropHandler = (e) => {
+        if (e.target === this.elements.settingsPanel) {
+          this.closeSettings();
+        }
+      };
+      this.elements.settingsPanel.addEventListener('click', backdropHandler);
+      handlers.set('settingsBackdrop', { element: this.elements.settingsPanel, event: 'click', handler: backdropHandler });
+    }
+
+    const escapeHandler = (e) => {
+      if (e.key === 'Escape' && this.elements.settingsPanel.classList.contains('show')) {
+        this.closeSettings();
+      }
+    };
+    document.addEventListener('keydown', escapeHandler);
+    handlers.set('escapeKey', { element: document, event: 'keydown', handler: escapeHandler });
+
     if (this.elements.newTabBtn) {
-      this.elements.newTabBtn.addEventListener('click', () => this.handleNewTab());
+      const newTabHandler = () => this.handleNewTab();
+      this.elements.newTabBtn.addEventListener('click', newTabHandler);
+      handlers.set('newTabBtn', { element: this.elements.newTabBtn, event: 'click', handler: newTabHandler });
     }
 
-    // Retry button
     if (this.elements.retryBtn) {
-      this.elements.retryBtn.addEventListener('click', () => this.handleRetry());
+      const retryHandler = () => this.handleRetry();
+      this.elements.retryBtn.addEventListener('click', retryHandler);
+      handlers.set('retryBtn', { element: this.elements.retryBtn, event: 'click', handler: retryHandler });
     }
 
-    // FIXED: Search input with proper debouncing
     if (this.elements.searchInput) {
       let searchTimeout;
       
-      this.elements.searchInput.addEventListener('input', (e) => {
+      const searchInputHandler = (e) => {
         const query = e.target.value.trim();
-        
-        // Update search clear button visibility immediately
         this.updateSearchClearButton(query);
-        
-        // Debounce the actual search
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
           this.handleSearch(query);
         }, 300);
-      });
+      };
+      
+      this.elements.searchInput.addEventListener('input', searchInputHandler);
+      handlers.set('searchInput', { element: this.elements.searchInput, event: 'input', handler: searchInputHandler });
 
-      // FIXED: Handle Enter key for immediate search
-      this.elements.searchInput.addEventListener('keydown', (e) => {
+      const searchKeyHandler = (e) => {
         if (e.key === 'Enter') {
           clearTimeout(searchTimeout);
           const query = e.target.value.trim();
           this.handleSearch(query);
         }
-      });
+      };
+      
+      this.elements.searchInput.addEventListener('keydown', searchKeyHandler);
+      handlers.set('searchKey', { element: this.elements.searchInput, event: 'keydown', handler: searchKeyHandler });
     }
 
-    // FIXED: Search clear button
     if (this.elements.searchClear) {
-      this.elements.searchClear.addEventListener('click', () => {
+      const clearHandler = () => {
         if (this.elements.searchInput) {
           this.elements.searchInput.value = '';
           this.currentSearchQuery = '';
           this.updateSearchClearButton('');
           this.handleSearch('');
-          this.elements.searchInput.focus(); // Keep focus for better UX
+          this.elements.searchInput.focus();
         }
-      });
+      };
+      
+      this.elements.searchClear.addEventListener('click', clearHandler);
+      handlers.set('searchClear', { element: this.elements.searchClear, event: 'click', handler: clearHandler });
     }
 
+    const keyboardHandler = (e) => this.handleKeyboardShortcuts(e);
+    document.addEventListener('keydown', keyboardHandler);
+    handlers.set('keyboard', { element: document, event: 'keydown', handler: keyboardHandler });
+
+    this.eventHandlers = handlers;
     console.log('Event listeners setup completed');
   }
 
-  /**
-   * FIXED: Update search clear button visibility
-   */
+  handleKeyboardShortcuts(event) {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'k') {
+      event.preventDefault();
+      if (this.elements.searchInput) {
+        this.elements.searchInput.focus();
+        this.elements.searchInput.select();
+      }
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
+      event.preventDefault();
+      this.handleRefresh();
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key === ',') {
+      event.preventDefault();
+      this.openSettings();
+    }
+  }
+
   updateSearchClearButton(query) {
     if (this.elements.searchClear) {
       this.elements.searchClear.style.display = query ? 'block' : 'none';
     }
   }
 
-  /**
-   * Load initial data with fallback strategies
-   */
   async loadInitialData() {
     try {
-      // Strategy 1: Try background script
       await this.loadFromBackground();
       console.log('Data loaded from background successfully');
       return;
@@ -224,7 +1018,6 @@ class PopupController {
     }
 
     try {
-      // Strategy 2: Direct Chrome API
       await this.loadTabsDirectly();
       console.log('Data loaded directly successfully');
       return;
@@ -232,16 +1025,11 @@ class PopupController {
       console.warn('Direct loading failed:', error);
     }
 
-    // Strategy 3: Mock data
     this.loadMockData();
     console.log('Using mock data');
   }
 
-  /**
-   * Load data from background script
-   */
   async loadFromBackground() {
-    // Check if background is ready
     try {
       const pingResponse = await Promise.race([
         chrome.runtime.sendMessage({ type: MESSAGE_TYPES.PING }),
@@ -257,7 +1045,6 @@ class PopupController {
       throw new Error('Background script not responding');
     }
 
-    // Get tabs data
     const response = await Promise.race([
       chrome.runtime.sendMessage({ type: MESSAGE_TYPES.GET_ALL_TABS }),
       new Promise((_, reject) => 
@@ -270,14 +1057,11 @@ class PopupController {
     }
     
     this.tabs = response.data.tabs || [];
-    this.filteredTabs = [...this.tabs]; // FIXED: Initialize filtered tabs
+    this.filteredTabs = [...this.tabs];
     this.categories = response.data.categories || {};
     this.updateTabCount(response.data.totalCount || 0);
   }
 
-  /**
-   * Load tabs directly from Chrome API
-   */
   async loadTabsDirectly() {
     const chromeTabs = await chrome.tabs.query({});
     
@@ -292,9 +1076,8 @@ class PopupController {
       category: this.categorizeTab(tab)
     }));
 
-    this.filteredTabs = [...this.tabs]; // FIXED: Initialize filtered tabs
+    this.filteredTabs = [...this.tabs];
 
-    // Calculate categories
     this.categories = {};
     this.tabs.forEach(tab => {
       const category = tab.category || 'other';
@@ -304,9 +1087,6 @@ class PopupController {
     this.updateTabCount(this.tabs.length);
   }
 
-  /**
-   * Load mock data for testing
-   */
   loadMockData() {
     this.tabs = [
       {
@@ -338,50 +1118,36 @@ class PopupController {
         pinned: true,
         windowId: 1,
         category: 'productivity'
-      },
-      {
-        id: 4,
-        title: 'Twitter',
-        url: 'https://twitter.com',
-        favIconUrl: 'https://twitter.com/favicon.ico',
-        active: false,
-        pinned: false,
-        windowId: 1,
-        category: 'social'
-      },
-      {
-        id: 5,
-        title: 'Amazon',
-        url: 'https://amazon.com',
-        favIconUrl: 'https://amazon.com/favicon.ico',
-        active: false,
-        pinned: false,
-        windowId: 1,
-        category: 'shopping'
       }
     ];
 
-    this.filteredTabs = [...this.tabs]; // FIXED: Initialize filtered tabs
-
+    this.filteredTabs = [...this.tabs];
     this.categories = {
       development: 1,
       entertainment: 1,
-      productivity: 1,
-      social: 1,
-      shopping: 1
+      productivity: 1
     };
-
     this.updateTabCount(this.tabs.length);
   }
 
-  /**
-   * Simple tab categorization
-   */
   categorizeTab(tab) {
     if (!tab.url) return 'other';
     
     const url = tab.url.toLowerCase();
     const title = (tab.title || '').toLowerCase();
+    
+    const customRules = this.settingsManager.getCustomRules();
+    
+    for (const [category, rules] of Object.entries(customRules)) {
+      if (rules.domains && rules.domains.some(domain => url.includes(domain))) {
+        return category;
+      }
+      
+      if (rules.keywords && rules.keywords.some(keyword => 
+        url.includes(keyword) || title.includes(keyword))) {
+        return category;
+      }
+    }
     
     if (url.includes('github.com') || url.includes('stackoverflow.com') || title.includes('code')) {
       return 'development';
@@ -408,26 +1174,17 @@ class PopupController {
     return 'other';
   }
 
-  /**
-   * Update tab count display
-   */
   updateTabCount(count) {
     if (this.elements.tabCount) {
       this.elements.tabCount.textContent = count;
     }
   }
 
-  /**
-   * Show loading state
-   */
   showLoadingState() {
     this.showState('loading');
     this.isLoading = true;
   }
 
-  /**
-   * Hide loading state
-   */
   hideLoadingState() {
     this.isLoading = false;
     if (this.filteredTabs.length === 0 && this.tabs.length === 0) {
@@ -438,23 +1195,14 @@ class PopupController {
     }
   }
 
-  /**
-   * Show categories
-   */
   showCategories() {
     this.showState('categories');
   }
 
-  /**
-   * Show empty state
-   */
   showEmptyState() {
     this.showState('empty');
   }
 
-  /**
-   * Show error state
-   */
   showErrorState(message) {
     if (this.elements.errorMessage) {
       this.elements.errorMessage.textContent = message;
@@ -462,9 +1210,6 @@ class PopupController {
     this.showState('error');
   }
 
-  /**
-   * Show specific state
-   */
   showState(state) {
     const states = {
       loading: this.elements.loadingState,
@@ -473,7 +1218,6 @@ class PopupController {
       categories: this.elements.categoriesContainer
     };
 
-    // Hide all states
     Object.values(states).forEach(element => {
       if (element) {
         element.style.display = 'none';
@@ -481,7 +1225,6 @@ class PopupController {
       }
     });
 
-    // Show requested state
     const targetElement = states[state];
     if (targetElement) {
       targetElement.style.display = state === 'categories' ? 'block' : 'flex';
@@ -489,27 +1232,21 @@ class PopupController {
     }
   }
 
-  /**
-   * FIXED: Handle search functionality
-   */
   handleSearch(query) {
     console.log('Searching for:', query);
     
     this.currentSearchQuery = query;
     
     if (!query || query.trim() === '') {
-      // Reset to show all tabs
       this.filteredTabs = [...this.tabs];
       console.log('Search cleared, showing all tabs');
     } else {
-      // Filter tabs based on search query
       const searchTerm = query.toLowerCase().trim();
       
       this.filteredTabs = this.tabs.filter(tab => {
         const title = (tab.title || '').toLowerCase();
         const url = (tab.url || '').toLowerCase();
         
-        // Search in title and URL
         return title.includes(searchTerm) || 
                url.includes(searchTerm) ||
                this.getDomainFromUrl(url).includes(searchTerm);
@@ -518,13 +1255,9 @@ class PopupController {
       console.log(`Found ${this.filteredTabs.length} tabs matching "${query}"`);
     }
 
-    // Update the display
     this.renderTabs();
-    
-    // Update tab count to reflect filtered results
     this.updateTabCount(this.filteredTabs.length);
     
-    // Show appropriate state based on results
     if (this.filteredTabs.length === 0 && query) {
       this.showNoResultsState(query);
     } else if (this.filteredTabs.length === 0) {
@@ -534,9 +1267,6 @@ class PopupController {
     }
   }
 
-  /**
-   * FIXED: Extract domain from URL for better search
-   */
   getDomainFromUrl(url) {
     try {
       const urlObj = new URL(url);
@@ -546,25 +1276,28 @@ class PopupController {
     }
   }
 
-  /**
-   * FIXED: Show no search results state
-   */
   showNoResultsState(query) {
     if (!this.elements.categoriesContainer) return;
+    
+    const clearSearchBtn = document.createElement('button');
+    clearSearchBtn.className = 'btn btn-secondary';
+    clearSearchBtn.textContent = 'Clear Search';
+    clearSearchBtn.addEventListener('click', () => this.clearSearch());
     
     this.elements.categoriesContainer.innerHTML = `
       <div class="empty-state show" style="display: flex; position: relative; background: transparent;">
         <span class="empty-icon" aria-hidden="true">🔍</span>
         <h3>No Results Found</h3>
         <p>No tabs match "${this.escapeHtml(query)}"</p>
-        <button class="btn btn-secondary" onclick="popupController.clearSearch()">Clear Search</button>
       </div>
     `;
+    
+    const emptyState = this.elements.categoriesContainer.querySelector('.empty-state');
+    if (emptyState) {
+      emptyState.appendChild(clearSearchBtn);
+    }
   }
 
-  /**
-   * FIXED: Clear search helper method
-   */
   clearSearch() {
     if (this.elements.searchInput) {
       this.elements.searchInput.value = '';
@@ -573,9 +1306,6 @@ class PopupController {
     this.updateSearchClearButton('');
   }
 
-  /**
-   * FIXED: Render tabs using filtered tabs
-   */
   renderTabs() {
     if (!this.elements.categoriesContainer) return;
 
@@ -592,7 +1322,6 @@ class PopupController {
       return;
     }
 
-    // Group filtered tabs by category
     const grouped = {};
     this.filteredTabs.forEach(tab => {
       const category = tab.category || 'other';
@@ -600,24 +1329,18 @@ class PopupController {
       grouped[category].push(tab);
     });
 
-    // Sort categories by tab count (descending)
     const sortedCategories = Object.entries(grouped)
       .sort(([,a], [,b]) => b.length - a.length);
 
-    // Render each category
     sortedCategories.forEach(([category, categoryTabs]) => {
       this.renderCategory(category, categoryTabs);
     });
 
-    // Add search results summary if searching
     if (this.currentSearchQuery) {
       this.addSearchSummary();
     }
   }
 
-  /**
-   * FIXED: Add search results summary
-   */
   addSearchSummary() {
     if (!this.elements.categoriesContainer || !this.currentSearchQuery) return;
     
@@ -635,9 +1358,6 @@ class PopupController {
     this.elements.categoriesContainer.insertBefore(summaryDiv, this.elements.categoriesContainer.firstChild);
   }
 
-  /**
-   * Render a category section
-   */
   renderCategory(category, tabs) {
     const categoryDiv = document.createElement('div');
     categoryDiv.className = 'category-section';
@@ -646,88 +1366,125 @@ class PopupController {
     const icon = CATEGORY_ICONS[category] || CATEGORY_ICONS.other;
     const categoryName = category.charAt(0).toUpperCase() + category.slice(1);
 
-    categoryDiv.innerHTML = `
-      <div class="category-header" onclick="this.parentElement.querySelector('.tab-list').classList.toggle('collapsed'); this.classList.toggle('collapsed');">
-        <div class="category-info">
-          <span class="category-icon category-${category}">${icon}</span>
-          <span class="category-name">${categoryName}</span>
-          <span class="category-count">${tabs.length}</span>
-        </div>
-        <svg class="category-toggle" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M6 9l6 6 6-6"/>
-        </svg>
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'category-header';
+    headerDiv.innerHTML = `
+      <div class="category-info">
+        <span class="category-icon category-${category}">${icon}</span>
+        <span class="category-name">${categoryName}</span>
+        <span class="category-count">${tabs.length}</span>
       </div>
-      <div class="tab-list">
-        ${tabs.map(tab => this.renderTab(tab)).join('')}
-      </div>
+      <svg class="category-toggle" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
     `;
 
+    headerDiv.addEventListener('click', () => {
+      const tabList = categoryDiv.querySelector('.tab-list');
+      if (tabList) {
+        tabList.classList.toggle('collapsed');
+        headerDiv.classList.toggle('collapsed');
+      }
+    });
+
+    const tabListDiv = document.createElement('div');
+    tabListDiv.className = 'tab-list';
+    
+    tabs.forEach(tab => {
+      const tabElement = this.createTabElement(tab);
+      tabListDiv.appendChild(tabElement);
+    });
+
+    categoryDiv.appendChild(headerDiv);
+    categoryDiv.appendChild(tabListDiv);
     this.elements.categoriesContainer.appendChild(categoryDiv);
   }
 
-  /**
-   * FIXED: Render a single tab with improved search highlighting
-   */
-  renderTab(tab) {
+  createTabElement(tab) {
+    const tabDiv = document.createElement('div');
+    tabDiv.className = 'tab-item';
+    tabDiv.dataset.tabId = tab.id;
+
     const faviconUrl = tab.favIconUrl || this.getFallbackFavicon(tab.url);
     let title = this.escapeHtml(tab.title || 'Loading...');
     let url = this.escapeHtml(this.formatUrl(tab.url));
 
-    // FIXED: Highlight search terms
     if (this.currentSearchQuery) {
       const query = this.currentSearchQuery.toLowerCase();
       const titleLower = title.toLowerCase();
       const urlLower = url.toLowerCase();
       
-      // Highlight in title
       if (titleLower.includes(query)) {
         const regex = new RegExp(`(${this.escapeRegex(query)})`, 'gi');
         title = title.replace(regex, '<mark style="background: #fef08a; padding: 0 2px; border-radius: 2px;">$1</mark>');
       }
       
-      // Highlight in URL
       if (urlLower.includes(query)) {
         const regex = new RegExp(`(${this.escapeRegex(query)})`, 'gi');
         url = url.replace(regex, '<mark style="background: #fef08a; padding: 0 2px; border-radius: 2px;">$1</mark>');
       }
     }
 
-    return `
-      <div class="tab-item" data-tab-id="${tab.id}">
-        <img class="tab-favicon" src="${faviconUrl}" alt="" 
-             onerror="this.src='data:image/svg+xml,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;16&quot; height=&quot;16&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;%2364748b&quot; stroke-width=&quot;2&quot;><circle cx=&quot;12&quot; cy=&quot;12&quot; r=&quot;3&quot;/></svg>'">
-        <div class="tab-info">
-          <div class="tab-title">${title}</div>
-          <div class="tab-url">${url}</div>
-        </div>
-        <div class="tab-actions">
-          <button class="tab-action" onclick="popupController.focusTab(${tab.id})" title="Focus Tab">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"/>
-              <circle cx="12" cy="12" r="10"/>
-            </svg>
-          </button>
-          <button class="tab-action" onclick="popupController.closeTab(${tab.id})" title="Close Tab">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-      </div>
+    const favicon = document.createElement('img');
+    favicon.className = 'tab-favicon';
+    favicon.src = faviconUrl;
+    favicon.alt = '';
+    favicon.onerror = () => {
+      favicon.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%2364748b" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>';
+    };
+
+    const tabInfo = document.createElement('div');
+    tabInfo.className = 'tab-info';
+    tabInfo.innerHTML = `
+      <div class="tab-title">${title}</div>
+      <div class="tab-url">${url}</div>
     `;
+
+    const tabActions = document.createElement('div');
+    tabActions.className = 'tab-actions';
+
+    const focusBtn = document.createElement('button');
+    focusBtn.className = 'tab-action';
+    focusBtn.title = 'Focus Tab';
+    focusBtn.innerHTML = `
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <circle cx="12" cy="12" r="10"/>
+      </svg>
+    `;
+    focusBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.focusTab(tab.id);
+    });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'tab-action';
+    closeBtn.title = 'Close Tab';
+    closeBtn.innerHTML = `
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    `;
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.closeTab(tab.id);
+    });
+
+    tabActions.appendChild(focusBtn);
+    tabActions.appendChild(closeBtn);
+
+    tabDiv.appendChild(favicon);
+    tabDiv.appendChild(tabInfo);
+    tabDiv.appendChild(tabActions);
+
+    return tabDiv;
   }
 
-  /**
-   * FIXED: Escape regex special characters
-   */
   escapeRegex(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\        clearTimeout(search');
   }
 
-  /**
-   * Get fallback favicon
-   */
   getFallbackFavicon(url) {
     if (!url) return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%2364748b" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>';
     
@@ -739,9 +1496,6 @@ class PopupController {
     }
   }
 
-  /**
-   * Format URL for display
-   */
   formatUrl(url) {
     if (!url) return '';
     try {
@@ -752,9 +1506,6 @@ class PopupController {
     }
   }
 
-  /**
-   * Escape HTML
-   */
   escapeHtml(unsafe) {
     return unsafe
       .replace(/&/g, "&amp;")
@@ -764,21 +1515,17 @@ class PopupController {
       .replace(/'/g, "&#039;");
   }
 
-  /**
-   * FIXED: Handle refresh - preserve search state
-   */
   async handleRefresh() {
     if (this.isLoading) return;
 
     console.log('Refreshing tabs...');
     
-    const currentQuery = this.currentSearchQuery; // Preserve search query
+    const currentQuery = this.currentSearchQuery;
     this.showLoadingState();
     
     try {
       await this.loadInitialData();
       
-      // Reapply search if there was one
       if (currentQuery) {
         this.currentSearchQuery = currentQuery;
         if (this.elements.searchInput) {
@@ -788,92 +1535,91 @@ class PopupController {
       } else {
         this.renderTabs();
       }
+
+      this.notificationManager.success('Tabs refreshed successfully');
     } catch (error) {
       console.error('Refresh failed:', error);
       this.showErrorState('Failed to refresh tabs');
+      this.notificationManager.error('Failed to refresh tabs');
     } finally {
       this.hideLoadingState();
     }
   }
 
-  /**
-   * Handle new tab
-   */
   async handleNewTab() {
     try {
       await chrome.tabs.create({});
       window.close();
     } catch (error) {
       console.error('Failed to create new tab:', error);
+      this.notificationManager.error('Failed to create new tab');
     }
   }
 
-  /**
-   * Handle retry
-   */
   async handleRetry() {
     this.retryCount = 0;
     await this.loadInitialData();
     this.renderTabs();
   }
 
-  /**
-   * Focus a tab
-   */
   async focusTab(tabId) {
     try {
       await chrome.tabs.update(tabId, { active: true });
       const tab = await chrome.tabs.get(tabId);
       await chrome.windows.update(tab.windowId, { focused: true });
-      window.close();
+      
+      this.notificationManager.success('Tab focused');
+      setTimeout(() => window.close(), 500);
     } catch (error) {
       console.error(`Failed to focus tab ${tabId}:`, error);
+      this.notificationManager.error('Failed to focus tab');
     }
   }
 
-  /**
-   * FIXED: Close a tab - update both original and filtered arrays
-   */
   async closeTab(tabId) {
     try {
       await chrome.tabs.remove(tabId);
       
-      // Remove from both arrays
+      const tab = this.tabs.find(t => t.id === tabId);
+      
       this.tabs = this.tabs.filter(tab => tab.id !== tabId);
       this.filteredTabs = this.filteredTabs.filter(tab => tab.id !== tabId);
       
       this.updateTabCount(this.filteredTabs.length);
       this.renderTabs();
+      
+      this.notificationManager.success(`Closed "${tab?.title || 'tab'}"`);
     } catch (error) {
       console.error(`Failed to close tab ${tabId}:`, error);
+      this.notificationManager.error('Failed to close tab');
     }
   }
 
-  /**
-   * Open settings
-   */
   openSettings() {
     if (this.elements.settingsPanel) {
       this.elements.settingsPanel.style.display = 'flex';
       setTimeout(() => this.elements.settingsPanel.classList.add('show'), 10);
+      
+      const firstInput = this.elements.settingsPanel.querySelector('input, select, button');
+      if (firstInput) {
+        setTimeout(() => firstInput.focus(), 100);
+      }
     }
   }
 
-  /**
-   * Close settings
-   */
   closeSettings() {
     if (this.elements.settingsPanel) {
       this.elements.settingsPanel.classList.remove('show');
       setTimeout(() => {
         this.elements.settingsPanel.style.display = 'none';
       }, 300);
+      
+      if (this.elements.settingsBtn) {
+        this.elements.settingsBtn.focus();
+      }
     }
   }
 
-  /**
-   * Handle initialization error
-   */
   handleInitializationError(error) {
     console.error('Initialization error:', error);
     
@@ -886,9 +1632,30 @@ class PopupController {
     
     this.showErrorState('Failed to initialize extension. Please refresh the page.');
   }
+
+  cleanup() {
+    try {
+      for (const [key, handler] of this.eventHandlers.entries()) {
+        handler.element.removeEventListener(handler.event, handler.handler);
+      }
+      this.eventHandlers.clear();
+
+      if (this.notificationManager) {
+        this.notificationManager.destroy();
+      }
+      
+      if (this.settingsManager) {
+        this.settingsManager.cleanup();
+      }
+      
+      console.log('PopupController cleanup completed');
+    } catch (error) {
+      console.error('PopupController cleanup failed:', error);
+    }
+  }
 }
 
-// Initialize when DOM is ready
+// Initialize
 let popupController;
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -902,7 +1669,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (error) {
     console.error('Failed to initialize popup controller:', error);
     
-    // Show basic error state
     const errorState = document.querySelector('#errorState');
     const errorMessage = document.querySelector('#errorMessage');
     const loadingState = document.querySelector('#loadingState');
@@ -921,12 +1687,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
   
-  // Make available globally
   window.popupController = popupController;
 });
 
-// Fallback if DOM already loaded
 if (document.readyState !== 'loading') {
   const event = new Event('DOMContentLoaded');
   document.dispatchEvent(event);
 }
+
+window.addEventListener('beforeunload', () => {
+  if (popupController) {
+    popupController.cleanup();
+  }
+});
+
+export { PopupController };
+export default PopupController;

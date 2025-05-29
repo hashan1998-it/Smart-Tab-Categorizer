@@ -18,7 +18,7 @@
           <button
             id="refreshBtn"
             class="btn btn-icon"
-            title="Refresh Tabs"
+            title="Refresh Tabs (Ctrl+R)"
             aria-label="Refresh tabs"
           >
             <svg
@@ -38,7 +38,7 @@
           <button
             id="settingsBtn"
             class="btn btn-icon"
-            title="Settings"
+            title="Settings (Ctrl+,)"
             aria-label="Open settings"
           >
             <svg
@@ -76,7 +76,7 @@
           type="text"
           id="searchInput"
           class="search-input"
-          placeholder="Search tabs..."
+          placeholder="Search tabs... (Ctrl+K)"
           aria-label="Search tabs"
         />
         <button
@@ -160,7 +160,7 @@
           <button
             id="closeSettingsBtn"
             class="btn btn-icon"
-            title="Close Settings"
+            title="Close Settings (Escape)"
             aria-label="Close settings"
           >
             <svg
@@ -179,7 +179,7 @@
         <div class="settings-content">
           <!-- General Settings -->
           <div class="setting-section">
-            <h3>General</h3>
+            <h3>⚙️ General</h3>
             <p class="section-description">Configure basic extension behavior</p>
             
             <div class="setting-item">
@@ -198,7 +198,7 @@
                 <span>Show notifications</span>
               </label>
               <div class="setting-description">
-                Display notifications when tabs are organized
+                Display notifications when tabs are organized or actions are performed
               </div>
             </div>
             
@@ -217,7 +217,7 @@
 
           <!-- Categorization Settings -->
           <div class="setting-section">
-            <h3>Categorization</h3>
+            <h3>📋 Categorization</h3>
             <p class="section-description">Control how tabs are categorized</p>
             
             <div class="setting-item">
@@ -228,28 +228,33 @@
                 <option value="hybrid">Hybrid</option>
               </select>
               <div class="setting-description">
-                Auto: Smart categorization, Manual: You choose, Hybrid: Both
+                Auto: Smart categorization, Manual: You choose, Hybrid: Both approaches
               </div>
             </div>
           </div>
 
           <!-- Custom Rules -->
           <div class="setting-section">
-            <h3>Custom Rules</h3>
-            <p class="section-description">Add custom categorization rules</p>
+            <h3>🎯 Custom Rules</h3>
+            <p class="section-description">Add custom categorization rules to improve accuracy</p>
             
             <div class="add-rule-form">
               <select id="ruleCategorySelect">
-                <option value="development">Development</option>
-                <option value="social">Social</option>
-                <option value="productivity">Productivity</option>
-                <option value="entertainment">Entertainment</option>
-                <option value="shopping">Shopping</option>
-                <option value="news">News</option>
-                <option value="reference">Reference</option>
-                <option value="other">Other</option>
+                <option value="development">💻 Development</option>
+                <option value="social">🌐 Social</option>
+                <option value="productivity">📋 Productivity</option>
+                <option value="entertainment">🎥 Entertainment</option>
+                <option value="shopping">🛒 Shopping</option>
+                <option value="news">📰 News</option>
+                <option value="reference">📚 Reference</option>
+                <option value="other">📁 Other</option>
               </select>
-              <input type="text" id="ruleValueInput" placeholder="Domain or keyword">
+              <input 
+                type="text" 
+                id="ruleValueInput" 
+                placeholder="Enter domain (github.com) or keyword (tutorial)"
+                maxlength="100"
+              >
               <button type="button" id="addRuleBtn" class="btn btn-primary">Add Rule</button>
             </div>
             
@@ -258,33 +263,104 @@
             </div>
             
             <div class="rule-count">
-              <span id="ruleCount">0</span> custom rules
+              <span id="ruleCount">0</span> custom rules active
             </div>
           </div>
 
           <!-- Data Management -->
           <div class="setting-section">
-            <h3>Data Management</h3>
-            <p class="section-description">Manage your extension data</p>
+            <h3>💾 Data Management</h3>
+            <p class="section-description">Backup and restore your extension data</p>
             
             <div class="data-actions">
-              <button id="exportDataBtn" class="btn btn-secondary">Export Data</button>
-              <button id="importDataBtn" class="btn btn-secondary">Import Data</button>
-              <button id="clearDataBtn" class="btn btn-danger">Clear All Data</button>
+              <button id="exportDataBtn" class="btn btn-secondary" title="Download your settings and rules as a backup file">
+                📤 Export Data
+              </button>
+              <button id="importDataBtn" class="btn btn-secondary" title="Restore settings and rules from a backup file">
+                📥 Import Data
+              </button>
+              <button id="clearDataBtn" class="btn btn-danger" title="Permanently delete all extension data">
+                🗑️ Clear All Data
+              </button>
             </div>
             <input type="file" id="importFileInput" accept=".json" style="display: none;">
+            
+            <div class="setting-description" style="margin-top: 12px;">
+              <strong>Export:</strong> Creates a backup file with all your settings and custom rules.<br>
+              <strong>Import:</strong> Restores data from a previously exported backup file.<br>
+              <strong>Clear:</strong> Permanently deletes all extension data (cannot be undone).
+            </div>
+          </div>
+
+          <!-- Category Information -->
+          <div class="setting-section">
+            <h3>📚 Category Guide</h3>
+            <p class="section-description">Default categorization rules and examples</p>
+            
+            <div style="display: grid; gap: 12px; font-size: 13px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span>💻</span>
+                <strong>Development:</strong>
+                <span style="color: var(--text-secondary);">GitHub, Stack Overflow, documentation sites</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span>🌐</span>
+                <strong>Social:</strong>
+                <span style="color: var(--text-secondary);">Twitter, Facebook, LinkedIn, Discord</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span>📋</span>
+                <strong>Productivity:</strong>
+                <span style="color: var(--text-secondary);">Google Docs, Notion, Trello, Slack</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span>🎥</span>
+                <strong>Entertainment:</strong>
+                <span style="color: var(--text-secondary);">YouTube, Netflix, Spotify, Twitch</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span>🛒</span>
+                <strong>Shopping:</strong>
+                <span style="color: var(--text-secondary);">Amazon, eBay, online stores</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span>📰</span>
+                <strong>News:</strong>
+                <span style="color: var(--text-secondary);">News websites, articles, blogs</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span>📚</span>
+                <strong>Reference:</strong>
+                <span style="color: var(--text-secondary);">Wikipedia, tutorials, guides</span>
+              </div>
+            </div>
           </div>
 
           <!-- About -->
           <div class="setting-section">
-            <h3>About</h3>
+            <h3>ℹ️ About</h3>
             <p class="section-description">Smart Tab Organizer v1.0.0</p>
             <p class="section-description">
-              Automatically categorize and organize your browser tabs for better productivity.
+              Automatically categorize and organize your browser tabs for better productivity and focus.
             </p>
+            
             <div class="data-actions">
-              <button id="feedbackBtn" class="btn btn-secondary">Send Feedback</button>
-              <button id="helpBtn" class="btn btn-secondary">Help & Support</button>
+              <button id="feedbackBtn" class="btn btn-secondary" title="Send feedback or report issues">
+                📧 Send Feedback
+              </button>
+              <button id="helpBtn" class="btn btn-secondary" title="View help and usage tips">
+                ❓ Help & Tips
+              </button>
+            </div>
+            
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted);">
+              <div style="display: grid; gap: 4px;">
+                <div><strong>Keyboard Shortcuts:</strong></div>
+                <div>• Ctrl/Cmd + K: Focus search</div>
+                <div>• Ctrl/Cmd + R: Refresh tabs</div>
+                <div>• Ctrl/Cmd + ,: Open settings</div>
+                <div>• Escape: Close settings</div>
+              </div>
             </div>
           </div>
         </div>
@@ -292,8 +368,8 @@
     </div>
 
     <!-- Notification Container -->
-    <div id="notificationContainer" style="position: absolute; top: 80px; left: 16px; right: 16px; z-index: 1000; pointer-events: none;">
-      <div style="pointer-events: auto;"></div>
+    <div id="notificationContainer" 
+         style="position: fixed; top: 80px; left: 16px; right: 16px; z-index: 1000; pointer-events: none; display: flex; flex-direction: column; gap: 8px;">
     </div>
 
     <!-- Scripts -->
