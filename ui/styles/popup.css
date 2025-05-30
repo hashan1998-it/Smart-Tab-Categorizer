@@ -1,4 +1,4 @@
-/* Smart Tab Organizer - Complete CSS with Settings Support */
+/* Smart Tab Organizer - Updated CSS with Theme-Matching Header */
 
 /* CSS Variables for theming */
 :root {
@@ -16,6 +16,13 @@
   --text-primary: #0f172a;
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
+  
+  /* Header theme colors - Light theme */
+  --header-bg: #f8fafc;
+  --header-text: #0f172a;
+  --header-accent: rgba(15, 23, 42, 0.1);
+  --header-border: #e2e8f0;
+  
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
@@ -48,6 +55,12 @@
   --text-primary: #f8fafc;
   --text-secondary: #cbd5e1;
   --text-muted: #94a3b8;
+  
+  /* Header theme colors - Dark theme */
+  --header-bg: #1e293b;
+  --header-text: #f8fafc;
+  --header-accent: rgba(248, 250, 252, 0.1);
+  --header-border: #334155;
 }
 
 /* Base styles */
@@ -82,10 +95,10 @@ body {
   position: relative;
 }
 
-/* Header */
+/* UPDATED HEADER - Now matches theme */
 .header {
-  background: var(--primary-color);
-  color: white;
+  background: var(--header-bg);
+  color: var(--header-text);
   padding: var(--spacing-lg);
   display: flex;
   justify-content: space-between;
@@ -94,6 +107,15 @@ body {
   top: 0;
   z-index: 20;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--header-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all var(--transition-normal);
+}
+
+/* Dark theme header gets subtle gradient */
+[data-theme="dark"] .header {
+  background: linear-gradient(135deg, var(--header-bg) 0%, #334155 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .header-content {
@@ -106,17 +128,29 @@ body {
   font-size: var(--font-size-xl);
   font-weight: 600;
   margin: 0;
+  color: var(--header-text);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
+/* Updated tab count to match theme */
 .tab-count {
-  background: rgba(255, 255, 255, 0.15);
-  color: white;
+  background: var(--header-accent);
+  color: var(--header-text);
+  border: 1px solid var(--header-border);
   padding: var(--spacing-xs) var(--spacing-sm);
   border-radius: var(--radius-lg);
   font-size: var(--font-size-xs);
   font-weight: 500;
   min-width: 24px;
   text-align: center;
+  transition: all var(--transition-normal);
+}
+
+/* Enhanced tab count for dark theme */
+[data-theme="dark"] .tab-count {
+  background: rgba(96, 165, 250, 0.2);
+  color: #60a5fa;
+  border-color: #60a5fa;
 }
 
 .header-actions {
@@ -124,6 +158,65 @@ body {
   gap: var(--spacing-sm);
 }
 
+/* Updated header buttons to match theme */
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  background: var(--header-accent);
+  color: var(--header-text);
+  border: 1px solid var(--header-border);
+  padding: 0;
+  font-size: var(--font-size-lg);
+  transition: all var(--transition-normal);
+}
+
+.btn-icon:hover {
+  background: var(--border);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Enhanced header buttons for dark theme */
+[data-theme="dark"] .btn-icon {
+  background: rgba(248, 250, 252, 0.1);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .btn-icon:hover {
+  background: rgba(248, 250, 252, 0.2);
+  color: #60a5fa;
+}
+
+/* Settings panel header also matches theme */
+.settings-header {
+  background: var(--header-bg);
+  color: var(--header-text);
+  padding: var(--spacing-lg);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--header-border);
+  transition: all var(--transition-normal);
+}
+
+[data-theme="dark"] .settings-header {
+  background: linear-gradient(135deg, var(--header-bg) 0%, #334155 100%);
+}
+
+.settings-header h2 {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  margin: 0;
+  color: var(--header-text);
+}
+
+.settings-header .btn-icon {
+  background: var(--header-accent);
+  color: var(--header-text);
+}
+
+/* Rest of the existing CSS remains the same... */
 /* Buttons */
 .btn {
   border: none;
@@ -159,19 +252,6 @@ body {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
-}
-
-.btn-icon {
-  width: 32px;
-  height: 32px;
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  padding: 0;
-  font-size: var(--font-size-lg);
-}
-
-.btn-icon:hover {
-  background: rgba(255, 255, 255, 0.2);
 }
 
 .btn-primary {
@@ -291,7 +371,7 @@ body {
   background: var(--text-muted);
 }
 
-/* FIXED STATES */
+/* States */
 .loading-state,
 .empty-state,
 .error-state {
@@ -578,7 +658,7 @@ body {
   transform: scale(1.1);
 }
 
-/* SETTINGS PANEL */
+/* Settings Panel */
 .settings-panel {
   position: absolute;
   top: 0;
@@ -598,22 +678,6 @@ body {
   display: flex !important;
   opacity: 1;
   transform: translateY(0);
-}
-
-.settings-header {
-  background: var(--primary-color);
-  color: white;
-  padding: var(--spacing-lg);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.settings-header h2 {
-  font-size: var(--font-size-xl);
-  font-weight: 600;
-  margin: 0;
 }
 
 .settings-content {
@@ -709,19 +773,15 @@ body {
   margin-top: var(--spacing-xs);
 }
 
-/* Custom Rules */
-/* Custom Rules Input Field Styles - Match other input fields */
-
-/* Add Rule Form Styles */
+/* Add Rule Form */
 .add-rule-form {
   display: flex;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
   flex-wrap: wrap;
-  align-items: flex-end; /* Align items to bottom for consistent height */
+  align-items: flex-end;
 }
 
-/* Style the input field to match other inputs */
 .add-rule-form input[type="text"] {
   flex: 1;
   min-width: 180px;
@@ -732,7 +792,7 @@ body {
   background: var(--background);
   color: var(--text-primary);
   transition: all var(--transition-normal);
-  height: 40px; /* Match button height */
+  height: 40px;
 }
 
 .add-rule-form input[type="text"]:focus {
@@ -747,7 +807,6 @@ body {
   font-style: italic;
 }
 
-/* Style the select dropdown to match */
 .add-rule-form select {
   flex: 0 0 140px;
   padding: var(--spacing-sm) var(--spacing-md);
@@ -757,7 +816,7 @@ body {
   background: var(--background);
   color: var(--text-primary);
   transition: all var(--transition-normal);
-  height: 40px; /* Match input height */
+  height: 40px;
   cursor: pointer;
 }
 
@@ -771,15 +830,14 @@ body {
   border-color: var(--text-secondary);
 }
 
-/* Style the Add Rule button */
 .add-rule-form .btn-primary {
   flex: 0 0 auto;
-  height: 40px; /* Match input height */
+  height: 40px;
   padding: 0 var(--spacing-lg);
   white-space: nowrap;
 }
 
-/* Dark theme support */
+/* Dark theme support for forms */
 [data-theme="dark"] .add-rule-form input[type="text"],
 [data-theme="dark"] .add-rule-form select {
   background: var(--surface);
@@ -791,28 +849,6 @@ body {
 [data-theme="dark"] .add-rule-form select:focus {
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
-}
-
-/* Responsive adjustments */
-@media (max-width: 420px) {
-  .add-rule-form {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .add-rule-form select,
-  .add-rule-form input[type="text"],
-  .add-rule-form .btn-primary {
-    width: 100%;
-    flex: none;
-  }
-}
-
-/* Enhanced focus states for accessibility */
-.add-rule-form input[type="text"]:focus-visible,
-.add-rule-form select:focus-visible {
-  outline: 2px solid var(--primary-color);
-  outline-offset: 2px;
 }
 
 .custom-rules-list {
