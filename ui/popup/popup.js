@@ -49,7 +49,7 @@ class NotificationManager {
     this.notifications = new Map();
     this.recentMessages = new Map(); // Track recent messages to prevent duplicates
     this.defaultDuration = 4000;
-    this.maxNotifications = 5;
+    this.maxNotifications = 1;
     this.initialized = false;
     this.deduplicationWindow = 2000; // 2 seconds
   }
@@ -1859,7 +1859,6 @@ let initializationInProgress = false;
 document.addEventListener('DOMContentLoaded', async () => {
   // Prevent multiple initializations
   if (initializationInProgress || popupController) {
-    console.warn('Popup controller already initializing or initialized');
     return;
   }
   
