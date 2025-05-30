@@ -1,6 +1,6 @@
 /**
- * Main background service worker entry point
- * Orchestrates all background services and managers
+ * Enhanced Background Service Worker with Settings Support
+ * Orchestrates all background services and managers with settings integration
  */
 
 // Static imports (required for service workers)
@@ -10,7 +10,7 @@ import CategoryManager from './managers/CategoryManager.js';
 import StorageManager from './managers/StorageManager.js';
 import MessageService from './services/MessageService.js';
 import EventService from './services/EventService.js';
-import { EXTENSION_NAME, VERSION } from '../shared/constants/AppConstants.js';
+import { EXTENSION_NAME, VERSION, DEFAULT_SETTINGS, MESSAGE_TYPES } from '../shared/constants/AppConstants.js';
 
 class BackgroundController {
   constructor() {
@@ -18,6 +18,7 @@ class BackgroundController {
     this.services = new Map();
     this.startTime = Date.now();
     this.initPromise = null;
+    this.settings = { ...DEFAULT_SETTINGS };
     
     // Bind methods to preserve context
     this.init = this.init.bind(this);
@@ -51,6 +52,12 @@ class BackgroundController {
       
       // Set up error handling
       this.setupErrorHandling();
+      
+      // Register additional message handlers for settings
+      this.registerSettingsHandlers();
+      
+      // Load initial settings
+      await this.loadSettings();
       
       this.initialized = true;
       
@@ -168,6 +175,219 @@ class BackgroundController {
   }
 
   /**
+   * Register additional message handlers for settings
+   */
+  registerSettingsHandlers() {
+    const messageService = this.services.get('message');
+    if (!messageService) return;
+
+    // Get settings
+    messageService.registerHandler('GET_SETTINGS', async () => {
+      try {
+        const settings = await StorageManager.getSettings();
+        return { 
+          success: true, 
+          data: settings 
+        };
+      } catch (error) {
+        return { 
+          success: false, 
+          error: error.message,
+          data: DEFAULT_SETTINGS 
+        };
+      }
+    });
+
+    // Set settings
+    messageService.registerHandler('SET_SETTINGS', async (message) => {
+      try {
+        const updatedSettings = await StorageManager.setSettings(message.settings);
+        this.settings = updatedSettings;
+        
+        // Apply settings that affect background behavior
+        await this.applySettings(updatedSettings);
+        
+        return { 
+          success: true, 
+          data: updatedSettings 
+        };
+      } catch (error) {
+        return { 
+          success: false, 
+          error: error.message 
+        };
+      }
+    });
+
+    // Get custom rules
+    messageService.registerHandler('GET_CUSTOM_RULES', async () => {
+      try {
+        const rules = await StorageManager.getCategoryRules();
+        return { 
+          success: true, 
+          data: rules 
+        };
+      } catch (error) {
+        return { 
+          success: false, 
+          error: error.message,
+          data: {} 
+        };
+      }
+    });
+
+    // Set custom rules
+    messageService.registerHandler('SET_CUSTOM_RULES', async (message) => {
+      try {
+        await StorageManager.setCategoryRules(message.rules);
+        
+        // Refresh category manager with new rules
+        const categoryManager = this.services.get('category');
+        if (categoryManager) {
+          await categoryManager.refresh();
+        }
+        
+        return { 
+          success: true 
+        };
+      } catch (error) {
+        return { 
+          success: false, 
+          error: error.message 
+        };
+      }
+    });
+
+    // Add custom rule
+    messageService.registerHandler('ADD_CUSTOM_RULE', async (message) => {
+      try {
+        const categoryManager = this.services.get('category');
+        if (!categoryManager) {
+          throw new Error('CategoryManager not available');
+        }
+        
+        const result = await categoryManager.addCustomRule(
+          message.category, 
+          message.value, 
+          message.type
+        );
+        
+        return { 
+          success: true, 
+          data: { added: result } 
+        };
+      } catch (error) {
+        return { 
+          success: false, 
+          error: error.message 
+        };
+      }
+    });
+
+    // Remove custom rule
+    messageService.registerHandler('REMOVE_CUSTOM_RULE', async (message) => {
+      try {
+        const categoryManager = this.services.get('category');
+        if (!categoryManager) {
+          throw new Error('CategoryManager not available');
+        }
+        
+        const result = await categoryManager.removeCustomRule(
+          message.category, 
+          message.value, 
+          message.type
+        );
+        
+        return { 
+          success: true, 
+          data: { removed: result } 
+        };
+      } catch (error) {
+        return { 
+          success: false, 
+          error: error.message 
+        };
+      }
+    });
+
+    // Get extension stats
+    messageService.registerHandler('GET_STATS', async () => {
+      try {
+        const tabManager = this.services.get('tab');
+        const categoryManager = this.services.get('category');
+        const storageManager = this.services.get('storage');
+        
+        const stats = {
+          extension: {
+            version: VERSION,
+            uptime: Date.now() - this.startTime,
+            initialized: this.initialized
+          },
+          tabs: tabManager ? tabManager.getMetrics() : {},
+          categories: categoryManager ? categoryManager.getCategoryMetrics([]) : {},
+          storage: storageManager ? await storageManager.getStorageUsage() : {},
+          services: this.getServiceStatus()
+        };
+        
+        return { 
+          success: true, 
+          data: stats 
+        };
+      } catch (error) {
+        return { 
+          success: false, 
+          error: error.message 
+        };
+      }
+    });
+
+    console.log('✅ Settings message handlers registered');
+  }
+
+  /**
+   * Load initial settings
+   */
+  async loadSettings() {
+    try {
+      this.settings = await StorageManager.getSettings();
+      await this.applySettings(this.settings);
+      console.log('✅ Settings loaded and applied:', this.settings);
+    } catch (error) {
+      console.warn('Failed to load settings, using defaults:', error);
+      this.settings = { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  /**
+   * Apply settings that affect background behavior
+   */
+  async applySettings(settings) {
+    try {
+      // Apply auto-organize setting
+      if (settings.autoOrganize !== undefined) {
+        // This would control whether tabs are automatically categorized
+        // The actual implementation depends on how TabManager handles this
+        console.log(`Auto-organize: ${settings.autoOrganize ? 'enabled' : 'disabled'}`);
+      }
+
+      // Apply notification settings
+      if (settings.showNotifications !== undefined) {
+        // This would control background notifications
+        console.log(`Notifications: ${settings.showNotifications ? 'enabled' : 'disabled'}`);
+      }
+
+      // Apply categorization mode
+      if (settings.categorization) {
+        console.log(`Categorization mode: ${settings.categorization}`);
+      }
+
+      console.log('✅ Settings applied to background services');
+    } catch (error) {
+      console.error('Failed to apply settings:', error);
+    }
+  }
+
+  /**
    * Get service by name
    */
   getService(name) {
@@ -176,6 +396,30 @@ class BackgroundController {
       console.warn(`Service not found: ${name}`);
     }
     return service;
+  }
+
+  /**
+   * Get service status
+   */
+  getServiceStatus() {
+    const status = {};
+    
+    for (const [name, service] of this.services.entries()) {
+      try {
+        status[name] = {
+          available: !!service,
+          initialized: service.initialized !== undefined ? service.initialized : true,
+          ready: service.isReady ? service.isReady() : true
+        };
+      } catch (error) {
+        status[name] = {
+          available: false,
+          error: error.message
+        };
+      }
+    }
+    
+    return status;
   }
 
   /**
@@ -204,14 +448,10 @@ class BackgroundController {
         initialized: this.initialized,
         ready: this.isReady(),
         uptime: Date.now() - this.startTime,
-        services: {
-          storage: !!this.services.get('storage'),
-          category: !!this.services.get('category'),
-          tab: !!this.services.get('tab'),
-          message: !!this.services.get('message'),
-          event: !!this.services.get('event')
-        },
-        servicesCount: this.services.size
+        settings: this.settings,
+        services: this.getServiceStatus(),
+        servicesCount: this.services.size,
+        version: VERSION
       };
     } catch (error) {
       console.error('Error getting status:', error);
@@ -229,7 +469,8 @@ class BackgroundController {
     const health = {
       status: 'healthy',
       checks: {},
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      version: VERSION
     };
 
     try {
@@ -246,12 +487,36 @@ class BackgroundController {
         }
       }
 
+      // Check settings
+      try {
+        await StorageManager.getSettings();
+        health.checks.settings = 'healthy';
+      } catch (error) {
+        health.checks.settings = 'error';
+      }
+
+      // Check storage quota
+      try {
+        const quota = await StorageManager.checkQuota();
+        health.checks.storage_quota = quota.critical ? 'critical' : 
+                                     quota.warning ? 'warning' : 'healthy';
+        health.storageUsage = quota.usage;
+      } catch (error) {
+        health.checks.storage_quota = 'error';
+      }
+
       // Overall status
       const unhealthyServices = Object.values(health.checks).filter(status => 
         status === 'unhealthy' || status === 'error'
       );
       
-      if (unhealthyServices.length > 0) {
+      const criticalServices = Object.values(health.checks).filter(status => 
+        status === 'critical'
+      );
+      
+      if (criticalServices.length > 0) {
+        health.status = 'critical';
+      } else if (unhealthyServices.length > 0) {
         health.status = 'unhealthy';
       }
 
@@ -266,6 +531,30 @@ class BackgroundController {
         timestamp: Date.now()
       };
     }
+  }
+
+  /**
+   * Update settings from external source
+   */
+  async updateSettings(newSettings) {
+    try {
+      const updatedSettings = await StorageManager.setSettings(newSettings);
+      this.settings = updatedSettings;
+      await this.applySettings(updatedSettings);
+      
+      console.log('Settings updated:', updatedSettings);
+      return updatedSettings;
+    } catch (error) {
+      console.error('Failed to update settings:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get current settings
+   */
+  getSettings() {
+    return { ...this.settings };
   }
 
   /**
@@ -334,6 +623,20 @@ self.addEventListener('message', async (event) => {
       console.error('Failed to initialize on message:', error);
       event.ports[0]?.postMessage({ success: false, error: error.message });
     }
+  } else if (event.data?.type === 'HEALTH_CHECK') {
+    try {
+      const health = await backgroundController.healthCheck();
+      event.ports[0]?.postMessage({ success: true, data: health });
+    } catch (error) {
+      event.ports[0]?.postMessage({ success: false, error: error.message });
+    }
+  } else if (event.data?.type === 'GET_STATUS') {
+    try {
+      const status = backgroundController.getStatus();
+      event.ports[0]?.postMessage({ success: true, data: status });
+    } catch (error) {
+      event.ports[0]?.postMessage({ success: false, error: error.message });
+    }
   }
 });
 
@@ -352,4 +655,14 @@ self.isBackgroundReady = () => {
   return backgroundController.isReady();
 };
 
-console.log('🎯 Smart Tab Organizer background script loaded');
+// Get background status
+self.getBackgroundStatus = () => {
+  return backgroundController.getStatus();
+};
+
+// Update settings from external source
+self.updateBackgroundSettings = async (settings) => {
+  return await backgroundController.updateSettings(settings);
+};
+
+console.log('🎯 Smart Tab Organizer background script loaded with settings support');
