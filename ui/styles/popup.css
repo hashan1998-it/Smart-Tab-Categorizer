@@ -327,8 +327,12 @@ body {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .empty-icon,
@@ -433,14 +437,30 @@ body {
 }
 
 /* Category Colors */
-.category-development { background: #dbeafe; }
-.category-social { background: #fce7f3; }
-.category-productivity { background: #dcfce7; }
-.category-entertainment { background: #fed7d7; }
-.category-shopping { background: #fef3c7; }
-.category-news { background: #e0e7ff; }
-.category-reference { background: #f3e8ff; }
-.category-other { background: var(--surface); }
+.category-development {
+  background: #dbeafe;
+}
+.category-social {
+  background: #fce7f3;
+}
+.category-productivity {
+  background: #dcfce7;
+}
+.category-entertainment {
+  background: #fed7d7;
+}
+.category-shopping {
+  background: #fef3c7;
+}
+.category-news {
+  background: #e0e7ff;
+}
+.category-reference {
+  background: #f3e8ff;
+}
+.category-other {
+  background: var(--surface);
+}
 
 /* Tab List */
 .tab-list {
@@ -478,7 +498,7 @@ body {
 }
 
 .tab-item::before {
-  content: '';
+  content: "";
   position: absolute;
   left: 0;
   top: 0;
@@ -690,17 +710,109 @@ body {
 }
 
 /* Custom Rules */
+/* Custom Rules Input Field Styles - Match other input fields */
+
+/* Add Rule Form Styles */
 .add-rule-form {
   display: flex;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
   flex-wrap: wrap;
+  align-items: flex-end; /* Align items to bottom for consistent height */
 }
 
-.add-rule-form select,
-.add-rule-form input {
+/* Style the input field to match other inputs */
+.add-rule-form input[type="text"] {
   flex: 1;
-  min-width: 120px;
+  min-width: 180px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  background: var(--background);
+  color: var(--text-primary);
+  transition: all var(--transition-normal);
+  height: 40px; /* Match button height */
+}
+
+.add-rule-form input[type="text"]:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  transform: translateY(-1px);
+}
+
+.add-rule-form input[type="text"]::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Style the select dropdown to match */
+.add-rule-form select {
+  flex: 0 0 140px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  background: var(--background);
+  color: var(--text-primary);
+  transition: all var(--transition-normal);
+  height: 40px; /* Match input height */
+  cursor: pointer;
+}
+
+.add-rule-form select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.add-rule-form select:hover {
+  border-color: var(--text-secondary);
+}
+
+/* Style the Add Rule button */
+.add-rule-form .btn-primary {
+  flex: 0 0 auto;
+  height: 40px; /* Match input height */
+  padding: 0 var(--spacing-lg);
+  white-space: nowrap;
+}
+
+/* Dark theme support */
+[data-theme="dark"] .add-rule-form input[type="text"],
+[data-theme="dark"] .add-rule-form select {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .add-rule-form input[type="text"]:focus,
+[data-theme="dark"] .add-rule-form select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+}
+
+/* Responsive adjustments */
+@media (max-width: 420px) {
+  .add-rule-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .add-rule-form select,
+  .add-rule-form input[type="text"],
+  .add-rule-form .btn-primary {
+    width: 100%;
+    flex: none;
+  }
+}
+
+/* Enhanced focus states for accessibility */
+.add-rule-form input[type="text"]:focus-visible,
+.add-rule-form select:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 .custom-rules-list {
@@ -903,13 +1015,13 @@ body {
 
 /* Animations */
 @keyframes fadeIn {
-  from { 
-    opacity: 0; 
-    transform: translateY(10px); 
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
-  to { 
-    opacity: 1; 
-    transform: translateY(0); 
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -921,23 +1033,23 @@ body {
     height: 100vh;
     max-height: none;
   }
-  
+
   .add-rule-form {
     flex-direction: column;
   }
-  
+
   .add-rule-form input {
     min-width: auto;
   }
-  
+
   .data-actions {
     flex-direction: column;
   }
-  
+
   .header {
     padding: var(--spacing-md);
   }
-  
+
   .search-container {
     padding: var(--spacing-md);
   }
@@ -947,7 +1059,7 @@ body {
   .container {
     height: 550px;
   }
-  
+
   .loading-state,
   .empty-state,
   .error-state {
@@ -961,7 +1073,7 @@ body {
     --border: #000000;
     --text-secondary: #000000;
   }
-  
+
   [data-theme="dark"] {
     --border: #ffffff;
     --text-secondary: #ffffff;
@@ -994,12 +1106,12 @@ body {
     box-shadow: none;
     border: 1px solid #000;
   }
-  
+
   .header {
     background: #000 !important;
     -webkit-print-color-adjust: exact;
   }
-  
+
   .btn {
     border: 1px solid #000;
   }
