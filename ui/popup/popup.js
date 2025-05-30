@@ -1,6 +1,6 @@
 /**
- * Complete Popup Controller - Fixed All Errors
- * CSP compliant with proper error handling
+ * Complete Fixed Popup Controller - Eliminates All Duplications
+ * Full implementation with all fixes applied
  */
 
 // Constants (inline since we can't import from shared in popup context)
@@ -42,14 +42,16 @@ const DEFAULT_SETTINGS = {
   categorization: 'auto'
 };
 
-// Notification Manager Class (inline to avoid import issues)
+// Notification Manager Class with deduplication
 class NotificationManager {
   constructor() {
     this.container = null;
     this.notifications = new Map();
+    this.recentMessages = new Map(); // Track recent messages to prevent duplicates
     this.defaultDuration = 4000;
     this.maxNotifications = 5;
     this.initialized = false;
+    this.deduplicationWindow = 2000; // 2 seconds
   }
 
   init() {
@@ -89,20 +91,26 @@ class NotificationManager {
       return null;
     }
 
+    // Check for recent duplicates
+    const messageKey = `${type}:${message}`;
+    const now = Date.now();
+    
+    if (this.recentMessages.has(messageKey)) {
+      const lastShown = this.recentMessages.get(messageKey);
+      if (now - lastShown < this.deduplicationWindow) {
+        console.log('Preventing duplicate notification:', message);
+        return null;
+      }
+    }
+    
+    // Update recent messages tracker
+    this.recentMessages.set(messageKey, now);
+    
+    // Clean up old entries
+    this.cleanupRecentMessages();
+
     const id = this.generateId();
     const notificationDuration = duration || this.defaultDuration;
-
-    // Check for duplicate messages within 1 second
-    const recentDuplicate = Array.from(this.notifications.values()).find(notification => 
-      notification.message === message && 
-      notification.type === type && 
-      (Date.now() - notification.createdAt) < 1000
-    );
-
-    if (recentDuplicate) {
-      console.log('Preventing duplicate notification:', message);
-      return recentDuplicate.element.dataset.id;
-    }
 
     if (this.notifications.size >= this.maxNotifications) {
       const oldestId = this.notifications.keys().next().value;
@@ -131,6 +139,15 @@ class NotificationManager {
     }
 
     return id;
+  }
+
+  cleanupRecentMessages() {
+    const now = Date.now();
+    for (const [key, timestamp] of this.recentMessages.entries()) {
+      if (now - timestamp > this.deduplicationWindow) {
+        this.recentMessages.delete(key);
+      }
+    }
   }
 
   createNotificationElement(id, message, type) {
@@ -274,11 +291,12 @@ class NotificationManager {
       this.container.parentNode.removeChild(this.container);
     }
     this.notifications.clear();
+    this.recentMessages.clear();
     this.initialized = false;
   }
 }
 
-// Settings Manager Class (inline to avoid import issues)
+// Settings Manager Class with fixed duplications
 class SettingsManager {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
@@ -286,6 +304,8 @@ class SettingsManager {
     this.elements = {};
     this.initialized = false;
     this.notificationManager = null;
+    this.eventListenersSetup = false; // Prevent duplicate listeners
+    this.operationInProgress = new Set(); // Track ongoing operations
   }
 
   async init(notificationManager = null) {
@@ -294,7 +314,12 @@ class SettingsManager {
       
       this.notificationManager = notificationManager;
       this.setupDOMElements();
-      this.setupEventListeners();
+      
+      // Only setup event listeners once
+      if (!this.eventListenersSetup) {
+        this.setupEventListeners();
+        this.eventListenersSetup = true;
+      }
       
       await this.loadSettings();
       await this.loadCustomRules();
@@ -332,12 +357,6 @@ class SettingsManager {
   }
 
   setupEventListeners() {
-    // Prevent duplicate event listeners
-    if (this.eventListenersSetup) {
-      return;
-    }
-    this.eventListenersSetup = true;
-
     // General Settings
     if (this.elements.autoOrganize) {
       this.elements.autoOrganize.addEventListener('change', (e) => {
@@ -483,20 +502,30 @@ class SettingsManager {
   }
 
   async updateSetting(key, value) {
+    // Prevent duplicate update operations
+    const operationKey = `update_${key}`;
+    if (this.operationInProgress.has(operationKey)) {
+      return;
+    }
+    
+    this.operationInProgress.add(operationKey);
+    
     try {
       this.settings[key] = value;
       await this.saveSettings();
       
-      // Only show notification for user-initiated changes, not programmatic ones
+      // Only show notification for user-initiated changes
       if (this.notificationManager && this.initialized) {
-        this.notificationManager.show(`Setting updated`, 'success');
+        this.notificationManager.success('Setting updated');
       }
     } catch (error) {
       console.error(`Failed to update setting ${key}:`, error);
       
       if (this.notificationManager) {
-        this.notificationManager.show('Failed to save setting', 'error');
+        this.notificationManager.error('Failed to save setting');
       }
+    } finally {
+      this.operationInProgress.delete(operationKey);
     }
   }
 
@@ -518,26 +547,33 @@ class SettingsManager {
   }
 
   async handleAddRule() {
-    const category = this.elements.ruleCategorySelect?.value;
-    const value = this.elements.ruleValueInput?.value?.trim();
-
-    if (!category || !value) {
-      if (this.notificationManager) {
-        this.notificationManager.show('Please select a category and enter a value', 'warning');
-      }
+    // Prevent duplicate add operations
+    if (this.operationInProgress.has('addRule')) {
       return;
     }
-
-    if (value.length > 100) {
-      if (this.notificationManager) {
-        this.notificationManager.show('Rule value is too long (max 100 characters)', 'error');
-      }
-      return;
-    }
-
-    const type = value.includes('.') ? 'domain' : 'keyword';
+    
+    this.operationInProgress.add('addRule');
     
     try {
+      const category = this.elements.ruleCategorySelect?.value;
+      const value = this.elements.ruleValueInput?.value?.trim();
+
+      if (!category || !value) {
+        if (this.notificationManager) {
+          this.notificationManager.warning('Please select a category and enter a value');
+        }
+        return;
+      }
+
+      if (value.length > 100) {
+        if (this.notificationManager) {
+          this.notificationManager.error('Rule value is too long (max 100 characters)');
+        }
+        return;
+      }
+
+      const type = value.includes('.') ? 'domain' : 'keyword';
+      
       if (!this.customRules[category]) {
         this.customRules[category] = { domains: [], keywords: [] };
       }
@@ -547,7 +583,7 @@ class SettingsManager {
       
       if (existing.includes(value.toLowerCase())) {
         if (this.notificationManager) {
-          this.notificationManager.show('Rule already exists', 'warning');
+          this.notificationManager.warning('Rule already exists');
         }
         return;
       }
@@ -561,21 +597,30 @@ class SettingsManager {
 
       this.renderCustomRules();
 
-      // Only show ONE notification here
       if (this.notificationManager) {
-        this.notificationManager.show(`Added ${type} rule for ${category}`, 'success');
+        this.notificationManager.success(`Added ${type} rule for ${category}`);
       }
       
     } catch (error) {
       console.error('Failed to add custom rule:', error);
       
       if (this.notificationManager) {
-        this.notificationManager.show('Failed to add rule', 'error');
+        this.notificationManager.error('Failed to add rule');
       }
+    } finally {
+      this.operationInProgress.delete('addRule');
     }
   }
 
   async removeCustomRule(category, value, type) {
+    // Prevent duplicate remove operations
+    const operationKey = `removeRule_${category}_${value}_${type}`;
+    if (this.operationInProgress.has(operationKey)) {
+      return;
+    }
+    
+    this.operationInProgress.add(operationKey);
+    
     try {
       if (!this.customRules[category]) return;
 
@@ -595,17 +640,18 @@ class SettingsManager {
         await this.saveCustomRules();
         this.renderCustomRules();
 
-        // Only show ONE notification here
         if (this.notificationManager) {
-          this.notificationManager.show(`Removed ${type} rule`, 'success');
+          this.notificationManager.success(`Removed ${type} rule`);
         }
       }
     } catch (error) {
       console.error('Failed to remove custom rule:', error);
       
       if (this.notificationManager) {
-        this.notificationManager.show('Failed to remove rule', 'error');
+        this.notificationManager.error('Failed to remove rule');
       }
+    } finally {
+      this.operationInProgress.delete(operationKey);
     }
   }
 
@@ -666,6 +712,8 @@ class SettingsManager {
         removeBtn.className = 'rule-remove';
         removeBtn.title = 'Remove rule';
         removeBtn.textContent = '×';
+        
+        // Use arrow function to prevent 'this' binding issues
         removeBtn.addEventListener('click', () => {
           this.removeCustomRule(rule.category, rule.value, rule.type);
         });
@@ -683,6 +731,13 @@ class SettingsManager {
   }
 
   async handleExportData() {
+    // Prevent multiple export operations
+    if (this.operationInProgress.has('exportData')) {
+      return;
+    }
+    
+    this.operationInProgress.add('exportData');
+    
     try {
       const data = await chrome.storage.local.get();
       
@@ -711,23 +766,32 @@ class SettingsManager {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      // Only show ONE notification
       if (this.notificationManager) {
-        this.notificationManager.show('Data exported successfully', 'success');
+        this.notificationManager.success('Data exported successfully');
       }
       
     } catch (error) {
       console.error('Failed to export data:', error);
       
       if (this.notificationManager) {
-        this.notificationManager.show('Failed to export data', 'error');
+        this.notificationManager.error('Failed to export data');
       }
+    } finally {
+      this.operationInProgress.delete('exportData');
     }
   }
 
   async handleImportData(event) {
     const file = event.target.files[0];
     if (!file) return;
+
+    // Prevent multiple import operations
+    if (this.operationInProgress.has('importData')) {
+      event.target.value = '';
+      return;
+    }
+    
+    this.operationInProgress.add('importData');
 
     try {
       const text = await this.readFile(file);
@@ -737,13 +801,13 @@ class SettingsManager {
         throw new Error('Invalid backup file format');
       }
 
+      // Single confirmation dialog
       const confirmed = confirm(
         'This will replace your current settings and custom rules. ' +
         'Make sure you have exported your current data first. Continue?'
       );
       
       if (!confirmed) {
-        event.target.value = '';
         return;
       }
 
@@ -763,19 +827,19 @@ class SettingsManager {
         await chrome.storage.local.set({ tabs: importData.tabs });
       }
 
-      // Only show ONE notification
       if (this.notificationManager) {
-        this.notificationManager.show('Data imported successfully', 'success');
+        this.notificationManager.success('Data imported successfully');
       }
       
     } catch (error) {
       console.error('Failed to import data:', error);
       
       if (this.notificationManager) {
-        this.notificationManager.show('Failed to import data: ' + error.message, 'error');
+        this.notificationManager.error('Failed to import data: ' + error.message);
       }
     } finally {
       event.target.value = '';
+      this.operationInProgress.delete('importData');
     }
   }
 
@@ -789,23 +853,27 @@ class SettingsManager {
   }
 
   async handleClearData() {
-    const confirmed = confirm(
-      'This will permanently delete ALL extension data including:\n' +
-      '• All settings\n' +
-      '• Custom categorization rules\n' +
-      '• Tab history and statistics\n\n' +
-      'This action cannot be undone. Are you sure?'
-    );
-
-    if (!confirmed) return;
-
-    const doubleConfirmed = confirm(
-      'Are you ABSOLUTELY sure? This will delete everything and cannot be undone.'
-    );
-
-    if (!doubleConfirmed) return;
+    // Prevent multiple clear operations
+    if (this.operationInProgress.has('clearData')) {
+      return;
+    }
+    
+    this.operationInProgress.add('clearData');
 
     try {
+      // Single confirmation dialog
+      const confirmed = confirm(
+        'This will permanently delete ALL extension data including:\n' +
+        '• All settings\n' +
+        '• Custom categorization rules\n' +
+        '• Tab history and statistics\n\n' +
+        'This action cannot be undone. Are you sure?'
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
       await chrome.storage.local.clear();
       
       this.settings = { ...DEFAULT_SETTINGS };
@@ -814,17 +882,18 @@ class SettingsManager {
       this.populateSettingsUI();
       this.renderCustomRules();
 
-      // Only show ONE notification
       if (this.notificationManager) {
-        this.notificationManager.show('All data cleared', 'success');
+        this.notificationManager.success('All data cleared');
       }
       
     } catch (error) {
       console.error('Failed to clear data:', error);
       
       if (this.notificationManager) {
-        this.notificationManager.show('Failed to clear data', 'error');
+        this.notificationManager.error('Failed to clear data');
       }
+    } finally {
+      this.operationInProgress.delete('clearData');
     }
   }
 
@@ -867,11 +936,12 @@ class SettingsManager {
   }
 
   cleanup() {
+    this.operationInProgress.clear();
     console.log('SettingsManager cleanup completed');
   }
 }
 
-// Main Popup Controller
+// Main Popup Controller with fixed duplications
 class PopupController {
   constructor() {
     this.initialized = false;
@@ -884,6 +954,8 @@ class PopupController {
     this.maxRetries = 3;
     this.currentSearchQuery = '';
     this.eventHandlers = new Map();
+    this.operationInProgress = new Set(); // Track ongoing operations
+    this.eventListenersSetup = false; // Prevent duplicate event listeners
     
     this.notificationManager = new NotificationManager();
     this.settingsManager = new SettingsManager();
@@ -920,7 +992,7 @@ class PopupController {
   waitForDOM() {
     return new Promise((resolve) => {
       if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', resolve);
+        document.addEventListener('DOMContentLoaded', resolve, { once: true });
       } else {
         resolve();
       }
@@ -1055,13 +1127,10 @@ class PopupController {
       handlers.set('searchClear', { element: this.elements.searchClear, event: 'click', handler: clearHandler });
     }
 
-    // Only add keyboard handler once
-    if (!this.keyboardHandlerAdded) {
-      const keyboardHandler = (e) => this.handleKeyboardShortcuts(e);
-      document.addEventListener('keydown', keyboardHandler);
-      handlers.set('keyboard', { element: document, event: 'keydown', handler: keyboardHandler });
-      this.keyboardHandlerAdded = true;
-    }
+    // Global keyboard shortcuts
+    const keyboardHandler = (e) => this.handleKeyboardShortcuts(e);
+    document.addEventListener('keydown', keyboardHandler);
+    handlers.set('keyboard', { element: document, event: 'keydown', handler: keyboardHandler });
 
     this.eventHandlers = handlers;
     console.log('Event listeners setup completed');
@@ -1567,7 +1636,7 @@ class PopupController {
   }
 
   escapeRegex(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\        clearTimeout(search');
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\// Main Popup Controller with fixed duplications');
   }
 
   getFallbackFavicon(url) {
@@ -1601,8 +1670,12 @@ class PopupController {
   }
 
   async handleRefresh() {
-    if (this.isLoading) return;
+    // Prevent multiple refresh operations
+    if (this.isLoading || this.operationInProgress.has('refresh')) {
+      return;
+    }
 
+    this.operationInProgress.add('refresh');
     console.log('Refreshing tabs...');
     
     const currentQuery = this.currentSearchQuery;
@@ -1621,7 +1694,6 @@ class PopupController {
         this.renderTabs();
       }
 
-      // Only show success notification, avoid duplicates
       if (this.notificationManager && this.initialized) {
         this.notificationManager.success('Tabs refreshed');
       }
@@ -1633,6 +1705,7 @@ class PopupController {
       }
     } finally {
       this.hideLoadingState();
+      this.operationInProgress.delete('refresh');
     }
   }
 
@@ -1642,7 +1715,9 @@ class PopupController {
       window.close();
     } catch (error) {
       console.error('Failed to create new tab:', error);
-      this.notificationManager.error('Failed to create new tab');
+      if (this.notificationManager) {
+        this.notificationManager.error('Failed to create new tab');
+      }
     }
   }
 
@@ -1653,14 +1728,21 @@ class PopupController {
   }
 
   async focusTab(tabId) {
+    // Prevent multiple focus operations on same tab
+    const operationKey = `focus_${tabId}`;
+    if (this.operationInProgress.has(operationKey)) {
+      return;
+    }
+    
+    this.operationInProgress.add(operationKey);
+    
     try {
       await chrome.tabs.update(tabId, { active: true });
       const tab = await chrome.tabs.get(tabId);
       await chrome.windows.update(tab.windowId, { focused: true });
       
-      // Only show ONE notification, and make it brief
       if (this.notificationManager && this.initialized) {
-        this.notificationManager.show('Tab focused', 'success', 1500); // Shorter duration
+        this.notificationManager.success('Tab focused', 1500);
       }
       setTimeout(() => window.close(), 500);
     } catch (error) {
@@ -1668,14 +1750,22 @@ class PopupController {
       if (this.notificationManager) {
         this.notificationManager.error('Failed to focus tab');
       }
+    } finally {
+      this.operationInProgress.delete(operationKey);
     }
   }
 
   async closeTab(tabId) {
+    // Prevent multiple close operations on same tab
+    const operationKey = `close_${tabId}`;
+    if (this.operationInProgress.has(operationKey)) {
+      return;
+    }
+    
+    this.operationInProgress.add(operationKey);
+    
     try {
       await chrome.tabs.remove(tabId);
-      
-      const tab = this.tabs.find(t => t.id === tabId);
       
       this.tabs = this.tabs.filter(tab => tab.id !== tabId);
       this.filteredTabs = this.filteredTabs.filter(tab => tab.id !== tabId);
@@ -1683,15 +1773,16 @@ class PopupController {
       this.updateTabCount(this.filteredTabs.length);
       this.renderTabs();
       
-      // Only show ONE notification with shorter text
       if (this.notificationManager && this.initialized) {
-        this.notificationManager.show('Tab closed', 'success', 1500);
+        this.notificationManager.success('Tab closed', 1500);
       }
     } catch (error) {
       console.error(`Failed to close tab ${tabId}:`, error);
       if (this.notificationManager) {
         this.notificationManager.error('Failed to close tab');
       }
+    } finally {
+      this.operationInProgress.delete(operationKey);
     }
   }
 
@@ -1735,8 +1826,14 @@ class PopupController {
 
   cleanup() {
     try {
+      // Clear all ongoing operations
+      this.operationInProgress.clear();
+      
+      // Remove all event listeners
       for (const [key, handler] of this.eventHandlers.entries()) {
-        handler.element.removeEventListener(handler.event, handler.handler);
+        if (handler.element && handler.handler) {
+          handler.element.removeEventListener(handler.event, handler.handler);
+        }
       }
       this.eventHandlers.clear();
 
@@ -1755,10 +1852,18 @@ class PopupController {
   }
 }
 
-// Initialize
+// Initialize - Single instance creation
 let popupController;
+let initializationInProgress = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // Prevent multiple initializations
+  if (initializationInProgress || popupController) {
+    console.warn('Popup controller already initializing or initialized');
+    return;
+  }
+  
+  initializationInProgress = true;
   console.log('DOM loaded, initializing popup controller');
   
   popupController = new PopupController();
@@ -1785,21 +1890,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         errorMessage.textContent = 'Failed to initialize extension. Please refresh the page.';
       }
     }
+  } finally {
+    initializationInProgress = false;
   }
   
-  window.popupController = popupController;
+  // Global access for debugging only
+  if (typeof window !== 'undefined') {
+    window.popupController = popupController;
+  }
 });
 
+// Handle already loaded DOM
 if (document.readyState !== 'loading') {
-  const event = new Event('DOMContentLoaded');
-  document.dispatchEvent(event);
+  setTimeout(() => {
+    const event = new Event('DOMContentLoaded');
+    document.dispatchEvent(event);
+  }, 0);
 }
 
+// Cleanup on unload
 window.addEventListener('beforeunload', () => {
   if (popupController) {
     popupController.cleanup();
   }
 });
 
-export { PopupController };
+// Prevent multiple script executions
+if (window.popupControllerLoaded) {
+  console.warn('Popup controller script already loaded');
+} else {
+  window.popupControllerLoaded = true;
+}
+
+export { PopupController, NotificationManager, SettingsManager };
 export default PopupController;
