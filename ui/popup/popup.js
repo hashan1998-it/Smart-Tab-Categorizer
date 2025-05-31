@@ -1837,10 +1837,6 @@ class PopupController {
       } else {
         this.renderTabs();
       }
-
-      if (this.notificationManager && this.initialized) {
-        this.notificationManager.success("Tabs refreshed");
-      }
     } catch (error) {
       console.error("Refresh failed:", error);
       this.showErrorState("Failed to refresh tabs");
@@ -1884,11 +1880,6 @@ class PopupController {
       await chrome.tabs.update(tabId, { active: true });
       const tab = await chrome.tabs.get(tabId);
       await chrome.windows.update(tab.windowId, { focused: true });
-
-      if (this.notificationManager && this.initialized) {
-        this.notificationManager.success("Tab focused", 1500);
-      }
-      setTimeout(() => window.close(), 500);
     } catch (error) {
       console.error(`Failed to focus tab ${tabId}:`, error);
       if (this.notificationManager) {
@@ -1916,10 +1907,6 @@ class PopupController {
 
       this.updateTabCount(this.filteredTabs.length);
       this.renderTabs();
-
-      if (this.notificationManager && this.initialized) {
-        this.notificationManager.success("Tab closed", 1500);
-      }
     } catch (error) {
       console.error(`Failed to close tab ${tabId}:`, error);
       if (this.notificationManager) {
