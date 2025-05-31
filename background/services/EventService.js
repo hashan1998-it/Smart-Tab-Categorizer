@@ -243,7 +243,7 @@ class EventService {
           await chrome.notifications.create({
             type: 'basic',
             iconUrl: '/icons/icon-48.png',
-            title: 'Smart Tab Organizer Installed!',
+            title: 'Tabulo Installed!',
             message: 'Click the extension icon to start organizing your tabs.'
           });
         } catch (error) {

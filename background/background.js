@@ -665,4 +665,4 @@ self.updateBackgroundSettings = async (settings) => {
   return await backgroundController.updateSettings(settings);
 };
 
-console.log('🎯 Smart Tab Organizer background script loaded with settings support');
+console.log('🎯 Tabulo background script loaded with settings support');

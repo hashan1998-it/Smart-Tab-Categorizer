@@ -2,7 +2,7 @@
  * Shared application constants
  */
 
-export const EXTENSION_NAME = 'Smart Tab Organizer';
+export const EXTENSION_NAME = 'Tabulo';
 export const VERSION = '1.0.0';
 
 export const CATEGORIES = {

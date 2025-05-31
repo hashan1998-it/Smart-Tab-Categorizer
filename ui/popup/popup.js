@@ -914,10 +914,10 @@ class SettingsManager {
   }
 
   handleFeedback() {
-    const subject = encodeURIComponent("Smart Tab Organizer Feedback");
+    const subject = encodeURIComponent("Tabulo Feedback");
     const body = encodeURIComponent(
       "Hi there!\n\n" +
-        "I'd like to share some feedback about Smart Tab Organizer:\n\n" +
+        "I'd like to share some feedback about Tabulo:\n\n" +
         "[Please describe your feedback here]\n\n" +
         "---\n" +
         `Extension Version: ${chrome.runtime.getManifest().version}\n` +
@@ -930,7 +930,7 @@ class SettingsManager {
 
   handleHelp() {
     alert(
-      "Smart Tab Organizer Help\n\n" +
+      "Tabulo Help\n\n" +
         "• The extension automatically categorizes your tabs\n" +
         "• Use custom rules to improve categorization\n" +
         "• Search tabs using the search bar\n" +
