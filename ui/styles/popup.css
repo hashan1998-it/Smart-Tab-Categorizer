@@ -82,10 +82,8 @@ body {
 
 /* Container */
 .container {
-  width: 400px;
   max-width: 100vw;
   height: 100vh;
-  max-height: 600px;
   display: flex;
   flex-direction: column;
   background: var(--background);
@@ -1152,3 +1150,4 @@ body {
     border: 1px solid #000;
   }
 }
+
